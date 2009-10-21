@@ -1,0 +1,49 @@
+*** BUG ***
++ NPHI>MMAX*2 is right condition for the sampling theorem to apply.	(16/10/2008)
++ Bug found in SHT.c : here are the correct versions of LiM() and LM marcros :	(16/10/2008)
+	#define LiM(l,im) ( (im*(2*LMAX+2 -MRES*(im+1)))/2 + l )
+	#define LM(l,m) ( (m*(2*LMAX+2 -(m+MRES)))/(2*MRES) + l )
++ Bug found in SHT.c : LMAX odd was treated incorrectly. (25/10/2008)
+
+*** Optimizations ***
+
+- Optimize m=0 and NPHI=1 (don't need to go to "complex" representation)
+
++ cache optimization have been performed for m=0 and are quite impressive at high LMAX.
+
+TIP:
++ LM_LOOP : translating an integer to a double is SLOW. So if l or l(l+1) is used in the computation, using an array is faster.
+     furthermore, it seems that cache misses has less penalty than branch misses.
+     LM loop with li[lm] array access seems faster... (at least for 4 arrays access).
+
+TIP:
++ other optimization : NLAT and NPHI should be checked for fftw-friendliness.
+
+*** SHT.c
+
++ CHECK for accuracy with MTR_DCT, default to gauss if not good enough.
+- Implement l even/odd sub-transforms.
+- Implement sperate m sub-transforms.
+
+- SHT e/o does not work in DCT space. (ok in Gauss version as of r72)
+
+for SHsphtor_to_spat, maybe storing .t and .p together is not the best... => I think it is.
+
+- SHT : implement even and odd l sub-cases.
+	should not change array sizes. only SHT function calls may (must) be different.
+-!!!	grid.c should also treat even/odd sub-cases. !!!
+
+- FFTW : out-of-place is faster than in-place. switch ? http://www.fftw.org/speed/CoreDuo-3.0GHz-icc64/
+- try blas ?
+
+- SHT : NLAT odd could be improved a little bit.
+
++ NLAT odd is now allowed
+	special treatment in SHT function. (but could be improved : point NLAT_2 has only even component)
+
+
+*** NOTES :
+DCT SHT is ok for LMAX=1300 and NLAT_2=1024. changeset 70:f901295a7862
+
+Run-time setup for everything.
+DCT is about 25% faster than GAUSS for xshells dj_ref case (axisym).
