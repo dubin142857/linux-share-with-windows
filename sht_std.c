@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -17,7 +17,7 @@
 
 /********************************************************************
  * SHTns : Spherical Harmonic Transform for numerical simulations.  *
- *    written by Nathanael Schaeffer / LGIT,CNRS                    *
+ *    written by Nathanael Schaeffer / CNRS                         *
  ********************************************************************/
 
 // global variables definitions
@@ -32,4 +32,5 @@
  * Spherical Harmonic transforms for sizes set by \ref shtns_init, \ref shtns_set_size and \ref shtns_precompute
 */
 //@{
+#define IVAR SHT_STD
 #include "SHT/sht_generic.c"

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -20,7 +20,7 @@
  
  - Normalization of the associated functions for various spherical harmonics conventions are possible, with or without Condon-Shortley phase.
  - When computing the derivatives (with respect to colatitude theta), there are no singularities.
- - written by Nathanael Schaeffer / LGIT,CNRS, with some ideas and code from the GSL 1.13 and Numerical Recipies.
+ - written by Nathanael Schaeffer / CNRS, with some ideas and code from the GSL 1.13 and Numerical Recipies.
 
  The associated legendre functions are computed using the following recurrence formula :
  \f[  Y_l^m(x) = a_l^m \, x \  Y_{l-1}^m(x) + b_l^m \ Y_{l-2}^m(x)  \f]
@@ -35,68 +35,66 @@
 // range checking for legendre functions. Comment out for slightly faster legendre function generation.
 //#define LEG_RANGE_CHECK
 
-// it appears that long double precision does not help the precision of the SHT (if the SHT itself is computed in double precision)
-//#define LEG_LONG_DOUBLE
-
-#ifdef LEG_LONG_DOUBLE
-  #define LEG_FLOAT_TYPE long double
-  #define LEG_SQRT(a) sqrtl(a)
-#else
-  #define LEG_FLOAT_TYPE double
-  #define LEG_SQRT(a) sqrt(a)
-#endif
-
 #if SHT_VERBOSE > 1
   #define LEG_RANGE_CHECK
 #endif
 
-/// computes sin(t)^n from cos(t). ie returns (1-x^2)^(n/2), with x = cos(t)
-inline LEG_FLOAT_TYPE sint_pow_n(LEG_FLOAT_TYPE cost, int n)
+/// computes val.sin(t)^n from cos(t). ie returns val.(1-x^2)^(n/2), with x = cos(t)
+/// works with very large values of n (up to 2700).
+long double a_sint_pow_n(long double val, long double cost, int n)
 {
-	LEG_FLOAT_TYPE val = 1.0;
-	LEG_FLOAT_TYPE s2 = (1.-cost)*(1.+cost);		// sin(t)^2 = 1 - cos(t)^2
-	if (n&1) val *= LEG_SQRT(s2);	// = sin(t)
-	n >>= 1;
-	while(n>0) {
-		if (n&1) val *= s2;
+	long double s2 = (1.-cost)*(1.+cost);		// sin(t)^2 = 1 - cos(t)^2
+	int k = n >> 7;
+	if (sizeof(s2) > 8) k = 0;		// enough accuracy, we do not bother.
+
+	if (n&1) val *= sqrt(s2);	// = sin(t)
+	do {
+		if (n&2) val *= s2;
 		n >>= 1;
 		s2 *= s2;
+	} while(n > k);
+	n >>= 1;
+	while(n > 0) {		// take care of very large power n
+		n--;
+		val *= s2;		
 	}
 	return val;		// = sint(t)^n
 }
 
-int *mmidx;				///< index array (size MMAX+1)
-LEG_FLOAT_TYPE *alm;	///< coefficient list for recurrence (size 2*NLM)
-
 /// Returns the value of a legendre polynomial of degree l and order im*MRES, noramalized for spherical harmonics, using recurrence.
 /// Requires a previous call to \ref legendre_precomp().
 /// Output compatible with the GSL function gsl_sf_legendre_sphPlm(l, m, x)
-double legendre_sphPlm(const int l, const int im, double x)
+double legendre_sphPlm(shtns_cfg shtns, const int l, const int im, double x)
 {
-	long int i,m,lm;
-	LEG_FLOAT_TYPE ymm, ymmp1;
+	double *al;
+	int i,m;
+	long double ymm, ymmp1;
 
 	m = im*MRES;
 #ifdef LEG_RANGE_CHECK
 	if ( (l>LMAX) || (l<m) || (im>MMAX) ) shtns_runerr("argument out of range in legendre_sphPlm");
 #endif
 
-	lm = mmidx[im];
-	ymm = alm[lm] * sint_pow_n(x, m);		// l=m
-	if (l==m) return ((double) ymm);
+	al = shtns->alm[im];
+	ymm = al[0];		// l=m
+	if (m>0) ymm *= SHT_LEG_SCALEF;
+	ymmp1 = ymm;
+	if (l==m) goto done;
 
-	ymmp1 = ymm * alm[lm+1] * x;				// l=m+1
-	lm+=2;
-	if (l == m+1) return ((double) ymmp1);
-	
+	ymmp1 *= al[1] * x;				// l=m+1
+	al+=2;
+	if (l == m+1) goto done;
+
 	for (i=m+2; i<l; i+=2) {
-		ymm   = alm[lm+1]*x*ymmp1 + alm[lm]*ymm;
-		ymmp1 = alm[lm+3]*x*ymm + alm[lm+2]*ymmp1;
-		lm+=4;
+		ymm   = al[1]*x*ymmp1 + al[0]*ymm;
+		ymmp1 = al[3]*x*ymm + al[2]*ymmp1;
+		al+=4;
 	}
 	if (i==l) {
-		ymmp1 = alm[lm+1]*x*ymmp1 + alm[lm]*ymm;
+		ymmp1 = al[1]*x*ymmp1 + al[0]*ymm;
 	}
+done:
+	if (m>0) ymmp1 *= a_sint_pow_n(1.0/SHT_LEG_SCALEF, x, m);
 	return ((double) ymmp1);
 }
 
@@ -106,36 +104,54 @@ double legendre_sphPlm(const int l, const int im, double x)
 /// Output compatible with the GSL function gsl_sf_legendre_sphPlm_array(lmax, m, x, yl)
 /// \param lmax maximum degree computed, \param im = m/MRES with m the SH order, \param x argument, x=cos(theta).
 /// \param[out] yl is a double array of size (lmax-m+1) filled with the values.
-void legendre_sphPlm_array(const int lmax, const int im, double x, double *yl)
+void legendre_sphPlm_array(shtns_cfg shtns, const int lmax, const int im, const double cost, double *yl)
 {
-	long int l,m,lm;
-	LEG_FLOAT_TYPE ymm, ymmp1;
+	double *al;
+	int l,m;
+	int rescale = 0;		// flag for rescale.
+	long double ymm, ymmp1, x;
 
 	m = im*MRES;
 #ifdef LEG_RANGE_CHECK
 	if ((lmax > LMAX)||(lmax < m)||(im>MMAX)) shtns_runerr("argument out of range in legendre_sphPlm_array");
 #endif
 
-	lm = mmidx[im];
-	ymm = alm[lm] * sint_pow_n(x, m);	// l=m
-	yl[0] = ymm;
-	if (lmax==m) return;		// done.
-
-	ymmp1 = ymm * alm[lm+1] * x;		// l=m+1
-	yl[1] = ymmp1;
-	lm+=2;
-	if (lmax==m+1) return;		// done.
-
+	x = cost;
+	al = shtns->alm[im];
 	yl -= m;			// shift pointer
+	ymm = al[0];	// l=m
+	if (m>0) {
+		if ((lmax <= SHT_L_RESCALE) || (sizeof(ymm) > 8)) {
+			ymm = a_sint_pow_n(ymm, x, m);
+		} else {
+			rescale = 1;
+			ymm *= SHT_LEG_SCALEF;
+		}
+	}
+	yl[m] = ymm;
+	if (lmax==m) goto done;		// done.
+
+	ymmp1 = ymm * al[1] * x;		// l=m+1
+	yl[m+1] = ymmp1;
+	al+=2;
+	if (lmax==m+1) goto done;		// done.
+
 	for (l=m+2; l<lmax; l+=2) {
-		ymm   = alm[lm+1]*x*ymmp1 + alm[lm]*ymm;
-		ymmp1 = alm[lm+3]*x*ymm + alm[lm+2]*ymmp1;
+		ymm   = al[1]*x*ymmp1 + al[0]*ymm;
+		ymmp1 = al[3]*x*ymm   + al[2]*ymmp1;
 		yl[l] = ymm;
 		yl[l+1] = ymmp1;
-		lm+=4;
+		al+=4;
 	}
 	if (l==lmax) {
-		yl[l] = alm[lm+1]*x*ymmp1 + alm[lm]*ymm;
+		yl[l] = al[1]*x*ymmp1 + al[0]*ymm;
+	}
+done:
+	if (rescale != 0) {
+		ymm = a_sint_pow_n(1.0/SHT_LEG_SCALEF, x, m);
+		for (l=m; l<=lmax; l++) {		// rescale.
+			yl[l] *= ymm;
+		}
 	}
 	return;
 }
@@ -150,79 +166,72 @@ void legendre_sphPlm_array(const int lmax, const int im, double x, double *yl)
 /// \param sint = sqrt(1-x^2) to avoid recomputation of sqrt.
 /// \param[out] yl is a double array of size (lmax-m+1) filled with the values (divided by sin(theta) if m>0)
 /// \param[out] dyl is a double array of size (lmax-m+1) filled with the theta-derivatives.
-void legendre_sphPlm_deriv_array(const int lmax, const int im, const double x, const double sint, double *yl, double *dyl)
+void legendre_sphPlm_deriv_array(shtns_cfg shtns, const int lmax, const int im, const double cost, const double sint, double *yl, double *dyl)
 {
-	long int l,m,lm;
-	LEG_FLOAT_TYPE st, y0, y1, dy0, dy1;
+	double *al;
+	long int l,m;
+	int rescale = 0;		// flag for rescale.
+	long double x, st, y0, y1, dy0, dy1;
 
+	x = cost;
 	m = im*MRES;
 #ifdef LEG_RANGE_CHECK
 	if ((lmax > LMAX)||(lmax < m)||(im>MMAX)) shtns_runerr("argument out of range in legendre_sphPlm_deriv_array");
 #endif
-	lm = mmidx[im];
+	al = shtns->alm[im];
+	yl -= m;	dyl -= m;			// shift pointers
 
 	st = sint;
-	y0 = alm[lm];
+	y0 = al[0];
 	dy0 = 0.0;
-	if (im>0) {		// m > 0
-		l = m-1;			// compute  sin(theta)^(m-1)
-		while(l>0) {
-			if (l&1) y0 *= st;
-			l >>= 1;
-			st *= st;
+	if (m>0) {		// m > 0
+		l = m-1;
+		if ((lmax <= SHT_L_RESCALE) || (sizeof(y0) > 8)) {
+			if (l&1) {
+				y0 = a_sint_pow_n(y0, x, l-1) * sint;		// avoid computation of sqrt
+			} else  y0 = a_sint_pow_n(y0, x, l);
+		} else {
+			rescale = 1;
+			y0 *= SHT_LEG_SCALEF;
 		}
 		dy0 = x*m*y0;
-		st = sint*sint;		// st = sin(theta)^2 is used in the recurrence for m>0
+		st *= st;			// st = sin(theta)^2 is used in the recurrence for m>0
 	}
-	yl[0] = y0;		// l=m
-	dyl[0] = dy0;
-	if (lmax==m) return;		// done.
+	yl[m] = y0;		// l=m
+	dyl[m] = dy0;
+	if (lmax==m) goto done;		// done.
 
-	y1 = alm[lm+1] * x * y0;
-	dy1 = alm[lm+1]*( x*dy0 - st*y0 );
-	yl[1] = y1;		// l=m+1
-	dyl[1] = dy1;
-	lm+=2;
-	if (lmax==m+1) return;		// done.
+	y1 = al[1] * x * y0;
+	dy1 = al[1]*( x*dy0 - st*y0 );
+	yl[m+1] = y1;		// l=m+1
+	dyl[m+1] = dy1;
+	if (lmax==m+1) goto done;		// done.
+	al+=2;
 
-	yl -= m;	dyl -= m;			// shift pointers
 	for (l=m+2; l<lmax; l+=2) {
-		y0 = alm[lm+1]*x*y1 + alm[lm]*y0;
-		dy0 = alm[lm+1]*(x*dy1 - y1*st) + alm[lm]*dy0;
+		y0 = al[1]*x*y1 + al[0]*y0;
+		dy0 = al[1]*(x*dy1 - y1*st) + al[0]*dy0;
 		yl[l] = y0;		dyl[l] = dy0;
-		y1 = alm[lm+3]*x*y0 + alm[lm+2]*y1;
-		dy1 = alm[lm+3]*(x*dy0 - y0*st) + alm[lm+2]*dy1;
+		y1 = al[3]*x*y0 + al[2]*y1;
+		dy1 = al[3]*(x*dy0 - y0*st) + al[2]*dy1;
 		yl[l+1] = y1;		dyl[l+1] = dy1;
-		lm+=4;
+		al+=4;
 	}
 	if (l==lmax) {
-		yl[l] = alm[lm+1]*x*y1 + alm[lm]*y0;
-		dyl[l] = alm[lm+1]*(x*dy1 - y1*st) + alm[lm]*dy0;
+		yl[l] = al[1]*x*y1 + al[0]*y0;
+		dyl[l] = al[1]*(x*dy1 - y1*st) + al[0]*dy0;
 	}
-
-/*	// Simple loop, without temporary variables.
-	yl -= m;	dyl -= m;			// shift pointers
-	for (l=m+2; l<=lmax; l++) {
-		yl[l] = alm[lm+1]*x*yl[l-1] + alm[lm]*yl[l-2];
-		dyl[l] = alm[lm+1]*(x*dyl[l-1] - yl[l-1]*st) + alm[lm]*dyl[l-2];
-		lm+=2;
-	}
-
-/*	// Alternative for evaluating the derivative (not better)
-	for (l=m+2; l<=lmax; l++) {
-//		dyl/dx = - (l * x * y[l] - c1 * (l+m) * y[l-1]) / (1-x^2);
-//		=> dyl/dtheta = (l * x * y[l] - c1 * (l+m) * y[l-1]) / sqrt(1-x^2);
-		if (m==0) {
-			const double c1 = sqrt( (2.*l+1.)/(2.*l-1.) );
-			dyl[l] = l*(x*yl[l] - c1*yl[l-1])/st;
-			if ( 1.-fabs(x) < 1.e-15 ) dyl[l] = 0.0;	// -l*(l+1)/2 *sin(theta)
-		} else {
-			const double c1 = sqrt(((2.*l+1.)/(2.*l-1.)) * ((double)(l-m)/(double)(l+m)));
-			dyl[l] = l*x*yl[l] - c1*(l+m)*yl[l-1];
+done:
+	if (rescale != 0) {
+		l = m-1;			// compute  sin(theta)^(m-1)
+		if (l&1) {
+			y0 = a_sint_pow_n(1.0/SHT_LEG_SCALEF, x, l-1) * sint;		// avoid computation of sqrt
+		} else  y0 = a_sint_pow_n(1.0/SHT_LEG_SCALEF, x, l);
+		for (l=m; l<=lmax; l++) {
+			yl[l] *= y0;		dyl[l] *= y0;		// rescale
 		}
 	}
-*/
-
+	return;
 }
 
 /// Precompute constants for the recursive generation of Legendre associated functions, with given normalization.
@@ -232,49 +241,52 @@ void legendre_sphPlm_deriv_array(const int lmax, const int im, const double x, c
 /// \param[in] with_cs_phase : Condon-Shortley phase (-1)^m is included (1) or not (0)
 /// \param[in] mpos_renorm : Optional renormalization for m>0.
 ///  1.0 (no renormalization) is the "complex" convention, while 0.5 leads to the "real" convention (with FFTW).
-void legendre_precomp(enum shtns_norm norm, int with_cs_phase, double mpos_renorm)
+void legendre_precomp(shtns_cfg shtns, enum shtns_norm norm, int with_cs_phase, double mpos_renorm)
 {
+	double *al0, *bl0;
+	double **alm, **blm;
 	long int im, m, l, lm;
-	LEG_FLOAT_TYPE t1, t2;
+	double t1, t2;
 
 #if SHT_VERBOSE > 1
-	printf("        > using custom fast recurrence for legendre polynomials\n");
 	printf("        > Condon-Shortley phase = %d, normalization = %d\n", with_cs_phase, norm);
 #endif
 
 	if (with_cs_phase != 0) with_cs_phase = 1;		// force to 1 if !=0
 
-	mmidx = (int *) malloc( (MMAX+1) * sizeof(int) );
-	alm = (LEG_FLOAT_TYPE *) malloc( 2*NLM * sizeof(LEG_FLOAT_TYPE) );
+	im = ((MMAX+2)>>1)*2;		// alloc memory for arrays.
+	alm = (double **) malloc( im * sizeof(double *) + (2*NLM)*sizeof(double) );
+	al0 = (double *) (alm + im);
+	bl0 = al0;		blm = alm;		// by default analysis recurrence is the same
 
 /// - Precompute the factors alm and blm of the recurrence relation :
   if (norm == sht_schmidt) {
 	for (im=0, lm=0; im<=MMAX; im++) {		/// <b> For Schmidt semi-normalized </b>
 		m = im*MRES;
-		mmidx[im] = lm;
-		t2 = LEG_SQRT(2*m+1);
-		alm[lm] = 1.0/t2;		/// starting value will be divided by \f$ \sqrt{2m+1} \f$ 
-		alm[lm+1] = t2;		// l=m+1
+		alm[im] = al0 + lm;
+		t2 = sqrt(2*m+1);
+		al0[lm] = 1.0/t2;		/// starting value will be divided by \f$ \sqrt{2m+1} \f$ 
+		al0[lm+1] = t2;		// l=m+1
 		lm+=2;
 		for (l=m+2; l<=LMAX; l++) {
-			t1 = LEG_SQRT((l+m)*(l-m));
-			alm[lm+1] = (2*l-1)/t1;		/// \f[  a_l^m = \frac{2l-1}{\sqrt{(l+m)(l-m)}}  \f]
-			alm[lm] = - t2/t1;			/// \f[  b_l^m = -\sqrt{\frac{(l-1+m)(l-1-m)}{(l+m)(l-m)}}  \f]
+			t1 = sqrt((l+m)*(l-m));
+			al0[lm+1] = (2*l-1)/t1;		/// \f[  a_l^m = \frac{2l-1}{\sqrt{(l+m)(l-m)}}  \f]
+			al0[lm] = - t2/t1;			/// \f[  b_l^m = -\sqrt{\frac{(l-1+m)(l-1-m)}{(l+m)(l-m)}}  \f]
 			t2 = t1;	lm+=2;
 		}
 	}
   } else {
 	for (im=0, lm=0; im<=MMAX; im++) {		/// <b> For orthonormal or 4pi-normalized </b>
 		m = im*MRES;
-		mmidx[im] = lm;
+		alm[im] = al0 + lm;
 		t2 = 2*m+1;
-		alm[lm] = 1.0;		// will contain the starting value.
-		alm[lm+1] = LEG_SQRT(2*m+3);		// l=m+1
+		al0[lm] = 1.0;		// will contain the starting value.
+		al0[lm+1] = sqrt(2*m+3);		// l=m+1
 		lm+=2;
 		for (l=m+2; l<=LMAX; l++) {
 			t1 = (l+m)*(l-m);
-			alm[lm+1] = LEG_SQRT(((2*l+1)*(2*l-1))/t1);			/// \f[  a_l^m = \sqrt{\frac{(2l+1)(2l-1)}{(l+m)(l-m)}}  \f]
-			alm[lm] = - LEG_SQRT(((2*l+1)*t2)/((2*l-3)*t1));	/// \f[  b_l^m = -\sqrt{\frac{2l+1}{2l-3}\,\frac{(l-1+m)(l-1-m)}{(l+m)(l-m)}}  \f]
+			al0[lm+1] = sqrt(((2*l+1)*(2*l-1))/t1);			/// \f[  a_l^m = \sqrt{\frac{(2l+1)(2l-1)}{(l+m)(l-m)}}  \f]
+			al0[lm] = - sqrt(((2*l+1)*t2)/((2*l-3)*t1));	/// \f[  b_l^m = -\sqrt{\frac{2l+1}{2l-3}\,\frac{(l-1+m)(l-1-m)}{(l+m)(l-m)}}  \f]
 			t2 = t1;	lm+=2;
 		}
 	}
@@ -284,21 +296,51 @@ void legendre_precomp(enum shtns_norm norm, int with_cs_phase, double mpos_renor
 /// \f[  Y_m^m(x) = Y_0^0 \ \sqrt{ \prod_{k=1}^{m} \frac{2k+1}{2k} } \ \ (-1)^m \ (1-x^2)^{m/2}  \f]
 	if ((norm == sht_fourpi)||(norm == sht_schmidt)) {
 		t1 = 1.0;
-		alm[0] = t1;		/// \f$ Y_0^0 = 1 \f$  for Schmidt or 4pi-normalized 
+		al0[0] = t1;		/// \f$ Y_0^0 = 1 \f$  for Schmidt or 4pi-normalized 
 	} else {
 		t1 = 0.25L/M_PIl;
-		alm[0] = LEG_SQRT(t1);		/// \f$ Y_0^0 = 1/\sqrt{4\pi} \f$ for orthonormal
+		al0[0] = sqrt(t1);		/// \f$ Y_0^0 = 1/\sqrt{4\pi} \f$ for orthonormal
 	}
 	t1 *= mpos_renorm;		// renormalization for m>0
 	for (im=1, m=0; im<=MMAX; im++) {
 		while(m<im*MRES) {
 			m++;
-			t1 *= ((LEG_FLOAT_TYPE)m + 0.5)/m;	// t1 *= (m+0.5)/m;
+			t1 *= ((double)m + 0.5)/m;	// t1 *= (m+0.5)/m;
 		}
-		t2 = LEG_SQRT(t1);
+		t2 = sqrt(t1);
 		if ( m & with_cs_phase ) t2 = -t2;		/// optional \f$ (-1)^m \f$ Condon-Shortley phase.
-		alm[mmidx[im]] *= t2;
+		alm[im][0] *= t2;
 	}
+
+/// - Compute analysis recurrence coefficients if necessary
+	if ((norm == sht_schmidt) || (mpos_renorm != 1.0)) {
+		im = ((MMAX+2)>>1)*2;
+		blm = (double **) malloc( im * sizeof(double *) + (2*NLM)*sizeof(double) );
+		bl0 = (double *) (blm + im);
+		for (lm=0; lm<2*NLM; lm++) bl0[lm] = al0[lm];		// copy
+		for (im=0, lm=0; im<=MMAX; im++) {
+			m = im*MRES;
+			blm[im] = bl0 + lm;
+			double c0 = 1.0;
+			if (m>0) c0 = 1.0/mpos_renorm;
+			if (norm == sht_schmidt) {
+				bl0[lm+1] *= (2*m+3)/(2*m+1.);
+				c0 *= 2*m+1;
+			}
+			bl0[lm] *= c0;
+			lm+=2;
+			for (l=m+2; l<=LMAX; l++) {
+				if (norm == sht_schmidt) {
+					bl0[lm] *= (2*l+1)/(2*l-3.);
+					bl0[lm+1] *= (2*l+1)/(2*l-1.);
+				}
+				lm+=2;
+			}
+		}
+	}
+
+	shtns->al0 = al0;		shtns->alm = alm;
+	shtns->bl0 = bl0;		shtns->blm = blm;
 }
 
 /// returns the value of the Legendre Polynomial of degree l.
@@ -306,17 +348,17 @@ void legendre_precomp(enum shtns_norm norm, int with_cs_phase, double mpos_renor
 double legendre_Pl(const int l, double x)
 {
 	long int i;
-	LEG_FLOAT_TYPE p1, p2, p3;
+	double p, p0, p1;
 
 	if ((l==0)||(x==1.0)) return ( 1. );
 	if (x==-1.0) return ( (l&1) ? -1. : 1. );
 
-	p2 = 1.0;		/// \f$  P_0 = 1  \f$
+	p0 = 1.0;		/// \f$  P_0 = 1  \f$
 	p1 = x;			/// \f$  P_1 = x  \f$
 	for (i=2; i<=l; i++) {		 /// recurrence : \f[  l P_l = (2l-1) x P_{l-1} - (l-1) P_{l-2}	 \f] (works ok up to l=100000)
-		p3 = p2;
-		p2 = p1;
-		p1 = (x*(2*i-1)*p2 - (i-1)*p3)/i;
+		p = (x*(2*i-1)*p1 - (i-1)*p0)/i;
+		p0 = p1;
+		p1 = p;
 	}
 	return ((double) p1);
 }
@@ -332,6 +374,9 @@ void gauss_nodes(long double *x, long double *w, int n)
 	long double z, z1, p1, p2, p3, pp;
 	long double eps;
 
+	long double l_1[n-1];		// cache for 1/l on stack.
+	for (l=2; l<=n; l++) l_1[l-2] = 1.0L/l;		// precompute 1/l
+
 	if (sizeof(eps) > 8) {
 		eps = 1.1e-19;		// desired precision, minimum = 1.0842e-19 (long double i387)
 	} else {
@@ -340,21 +385,21 @@ void gauss_nodes(long double *x, long double *w, int n)
 
 	m = (n+1)/2;
 	for (i=1;i<=m;i++) {
-		z = cos(M_PI*(i-0.25)/(n+0.5));	// initial guess
+		z = (1.0 - (n-1.)/(8.*n*n*n)) * cos(M_PI*(i-0.25)/(n+0.5));	// initial guess
 		do {
 			p1 = z;		// P_1
 			p2 = 1.0;	// P_0
 			for(l=2;l<=n;l++) {		 // recurrence : l P_l = (2l-1) z P_{l-1} - (l-1) P_{l-2}	(works ok up to l=100000)
 				p3 = p2;
 				p2 = p1;
-				p1 = ((2*l-1)*z*p2 - (l-1)*p3)/l;		// The Legendre polynomial...
+				p1 = ((2*l-1)*z*p2 - (l-1)*p3)*l_1[l-2];		// The Legendre polynomial...
 			}
-			pp = - n*(z*p1-p2)/((1.-z)*(1.+z));	// ... and its derivative.
+			pp = ((1.-z)*(1.+z))/(n*(p2-z*p1));			// ... and its inverse derivative.
 			z1 = z;
-			z = z-p1/pp;
+			z -= p1*pp;		// Newton's method
 		} while ( fabsl(z-z1) > eps );
 		x[i-1] = z;		// Build up the abscissas.
-		w[i-1] = 2.0/(((1.-z)*(1.+z))*(pp*pp));		// Build up the weights.
+		w[i-1] = 2.0*pp*pp/((1.-z)*(1.+z));		// Build up the weights.
 		x[n-i] = -z;
 		w[n-i] = w[i-1];
 	}

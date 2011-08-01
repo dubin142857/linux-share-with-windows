@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -38,15 +38,16 @@ V/// complex double arrays of size NLM.
 /// \param[in] ltr = specify maximum degree of spherical harmonic. ltr must be at most LMAX, and all spherical harmonic degree higher than ltr are set to zero. 
   #endif
 
-#Q void spat_to_SH(double *Vr, complex double *Qlm)
-#V void spat_to_SHsphtor(double *Vt, double *Vp, complex double *Slm, complex double *Tlm)
-# {
+QX	void GEN3(spat_to_SH_,ID_NME,SUFFIX)(shtns_cfg shtns, double *Vr, complex double *Qlm SUPARG) {
+VX	void GEN3(spat_to_SHsphtor_,ID_NME,SUFFIX)(shtns_cfg shtns, double *Vt, double *Vp, complex double *Slm, complex double *Tlm SUPARG) {
+3	void GEN3(spat_to_SHqst_,ID_NME,SUFFIX)(shtns_cfg shtns, double *Vr, double *Vt, double *Vp, complex double *Qlm, complex double *Slm, complex double *Tlm SUPARG) {
+
 Q	complex double *BrF;		// contains the Fourier transformed data
 V	complex double *BtF, *BpF;	// contains the Fourier transformed data
 Q	double *zl;
 V	double *dzl0;
 V	struct DtDp *dzl;
-	long int ni;
+	long int ni, llim, imlim;
 	long int i,i0, im,l;
 Q	complex double q0,q1;
 V	complex double s0,t0,s1,t1;
@@ -75,25 +76,26 @@ VB	#define pe0(i)	tpeo0[4*(i)+2]
 VB	#define po0(i)	tpeo0[4*(i)+3]
 
 	ni = NLAT_2;	// copy NLAT_2 to a local variable for faster access (inner loop limit)
-Q    	BrF = (complex double *) Vr;
-V    	BtF = (complex double *) Vt;	BpF = (complex double *) Vp;
+	llim = LTR;		imlim = MTR;
+	#ifdef SHT_VAR_LTR
+		if (imlim*MRES > llim) imlim = llim/MRES;
+	#endif
+Q		BrF = (complex double *) Vr;
+V		BtF = (complex double *) Vt;	BpF = (complex double *) Vp;
 
   #ifndef SHT_AXISYM
 	if (SHT_FFT > 0) {
 	    if (SHT_FFT > 1) {		// alloc memory for the FFT
 	    	long int nspat = ((NPHI>>1) +1)*NLAT;
-		  #ifndef SHT_3COMP
-Q	    	BrF = fftw_malloc( nspat * sizeof(complex double) );
-V	    	BtF = fftw_malloc( 2* nspat * sizeof(complex double) );
-V	    	BpF = BtF + nspat;
-		  #else
-Q	    	BrF = fftw_malloc( 3* nspat * sizeof(complex double) );
-V	    	BtF = BrF + nspat;		BpF = BtF + nspat;
-		  #endif
+QX	    	BrF = fftw_malloc( nspat * sizeof(complex double) );
+VX	    	BtF = fftw_malloc( 2* nspat * sizeof(complex double) );
+VX	    	BpF = BtF + nspat;
+3	    	BrF = fftw_malloc( 3* nspat * sizeof(complex double) );
+3	    	BtF = BrF + nspat;		BpF = BtF + nspat;
 	    }
-Q	    fftw_execute_dft_r2c(fft,Vr, BrF);
-V	    fftw_execute_dft_r2c(fft,Vt, BtF);
-V	    fftw_execute_dft_r2c(fft,Vp, BpF);
+Q	    fftw_execute_dft_r2c(shtns->fft,Vr, BrF);
+V	    fftw_execute_dft_r2c(shtns->fft,Vt, BtF);
+V	    fftw_execute_dft_r2c(shtns->fft,Vp, BpF);
 	}
   #endif
 
@@ -105,14 +107,15 @@ Q		#define BR0	((double *)reo)
 V		#define BT0	((double *)tpeo)
 V		#define BP0	((double *)tpeo + NLAT)
 V		l = (NPHI==1) ? 1 : 2;		// stride of source data.
+V		double* st_1 = shtns->st_1;
 V		i=0;	i0=0;	do {
 V			double sin_1 = st_1[i];
 V			((double *)BtF)[i0] *= sin_1; 	((double *)BpF)[i0] *= sin_1;
 V			i++;	i0+=l;
 V		} while (i<NLAT);
-Q		fftw_execute_r2r(dct_m0,(double *) BrF, BR0);		// DCT out-of-place.
-V		fftw_execute_r2r(dct_m0,(double *) BtF, BT0);		// DCT out-of-place.
-V		fftw_execute_r2r(dct_m0,(double *) BpF, BP0);		// DCT out-of-place.
+Q		fftw_execute_r2r(shtns->dct_m0,(double *) BrF, BR0);		// DCT out-of-place.
+V		fftw_execute_r2r(shtns->dct_m0,(double *) BtF, BT0);		// DCT out-of-place.
+V		fftw_execute_r2r(shtns->dct_m0,(double *) BpF, BP0);		// DCT out-of-place.
 	#else
 Q		#define BR0	((double *)BrF)
 V		#define BT0	((double *)BtF)
@@ -136,25 +139,25 @@ V			BP0[2*i] *= sin_1;		BP0[2*i+1] *= sin_2;
 V		#endif
 V			i++;
 V		} while (i<ni);
-Q		fftw_execute_r2r(dct_r1,(double *) BrF, (double *) BrF);	// DCT in-place.
-V		fftw_execute_r2r(dct_r1,(double *) BtF, (double *) BtF);	// DCT in-place.
-V		fftw_execute_r2r(dct_r1,(double *) BpF, (double *) BpF);	// DCT in-place.
+Q		fftw_execute_r2r(shtns->dct_r1,(double *) BrF, (double *) BrF);	// DCT in-place.
+V		fftw_execute_r2r(shtns->dct_r1,(double *) BtF, (double *) BtF);	// DCT in-place.
+V		fftw_execute_r2r(shtns->dct_r1,(double *) BpF, (double *) BpF);	// DCT in-place.
 	#endif
-		long int klim = shtns.klim;
+		long int klim = shtns->klim;
 		l=0;
 Q		v2d* Ql = (v2d*) Qlm;
 V		v2d* Sl = (v2d*) Slm;	v2d* Tl = (v2d*) Tlm;
-Q		zl = zlm_dct0;
-V		dzl0 = dzlm_dct0;
+Q		zl = shtns->zlm_dct0;
+V		dzl0 = shtns->dzlm_dct0;
 V	#ifndef _GCC_VEC_
 V		s1 = 0.0;	t1 = 0.0;		// l=0 : Sl = Tl = 0
 V	#else
 V		v2d s = vdup(0.0);		v2d t = vdup(0.0);		// l=0 : Sl = Tl = 0
 V	#endif
 	#ifdef SHT_VAR_LTR
-		i = (LTR * SHT_NL_ORDER) + 2;		// sum truncation
+		i = (llim * SHT_NL_ORDER) + 2;		// sum truncation
 		if (i < klim) klim = i;
-		while(l < LTR) {
+		while(l < llim) {
 	#else
 		do {		// l < LMAX
 	#endif
@@ -175,8 +178,8 @@ V				dzl0+=2;
 				i+=2;
 			} while(i<klim);
 		#ifdef SHT_VAR_LTR
-Q			zl += (shtns.klim-i);
-V			dzl0 += (shtns.klim-i);
+Q			zl += (shtns->klim-i);
+V			dzl0 += (shtns->klim-i);
 		#endif
 Q			Ql[l] = q0;		Ql[l+1] = q1;
 V			Sl[l+1] = s0;	Tl[l+1] = t0;
@@ -194,19 +197,19 @@ V				dzl0 +=2;
 				i++;
 			} while(2*i < klim);
 		#ifdef SHT_VAR_LTR
-Q			zl += (shtns.klim-2*i);
-V			dzl0 += (shtns.klim-2*i);
+Q			zl += (shtns->klim-2*i);
+V			dzl0 += (shtns->klim-2*i);
 		#endif
 Q			Ql[l]   = vlo_to_cplx(q);		Ql[l+1] = vhi_to_cplx(q);
 V			Sl[l+1] = vlo_to_cplx(s);		Tl[l+1] = vlo_to_cplx(t);
 	  #endif
 			l+=2;
 	#ifndef SHT_VAR_LTR
-		} while(l<LTR);
+		} while(l<llim);
 	#else
 		}
 	#endif
-		if (l == LTR) {
+		if (l == llim) {
 V	#ifndef _GCC_VEC_
 V			Sl[l] = s1;		Tl[l] = t1;
 V	#else
@@ -238,7 +241,7 @@ V		BtF += NLAT;	BpF += NLAT;
   #endif
 		i=0;
 QE		double r0 = 0.0;
-Q		zl = zlm[0];
+Q		zl = shtns->zlm[0];
   #ifndef SHT_AXISYM
 		i0 = (NPHI==1) ? 1 : 2;		// stride of source data.
  B		do {	// compute symmetric and antisymmetric parts.
@@ -268,13 +271,13 @@ Q		zl += ni + (ni&1);		// SSE alignement
 		l=1;			// l=0 is zero for the vector transform.
 Q		v2d* Ql = (v2d*) Qlm;		// virtual pointer for l=0 and im
 V		v2d* Sl = (v2d*) Slm;	v2d* Tl = (v2d*) Tlm;		// virtual pointer for l=0 and im
-V		dzl0 = (double *) dzlm[0];		// only theta derivative (d/dphi = 0 for m=0)
+V		dzl0 = (double *) shtns->dzlm[0];		// only theta derivative (d/dphi = 0 for m=0)
 QB		BrF += NLAT;
 VB		BtF += NLAT;	BpF += NLAT;
 Q		((complex double *)Ql)[0] = r0;
 V		Sl[0] = vdup(0.0);	Tl[0] = vdup(0.0);	// l=0 is zero for the vector transform.
 	#ifdef SHT_VAR_LTR
-		while (l<LTR) {		// ops : NLAT/2 * (2*(LMAX-m+1) + 4) : almost twice as fast.
+		while (l<llim) {		// ops : NLAT/2 * (2*(LMAX-m+1) + 4) : almost twice as fast.
 	#else
 		do {
 	#endif
@@ -316,11 +319,11 @@ V			Tl[l] = vlo_to_cplx(t);		Tl[l+1] = vhi_to_cplx(t);
   #endif
 			l+=2;
 	#ifndef SHT_VAR_LTR
-		} while (l<LTR);
+		} while (l<llim);
 	#else
 		}
 	#endif
-		if (l==LTR) {
+		if (l==llim) {
 			long int lstride=1;
 	  #ifdef SHT_VAR_LTR
 			if (l != LMAX) lstride=2;
@@ -352,12 +355,12 @@ V			Sl[l] = vdup(0.0);	Tl[l] = vdup(0.0);
 	}
   #endif
   #ifndef SHT_AXISYM
-	for (im=1;im<=MTR;im++) {
-		i0 = tm[im];
+	for (im=1;im<=imlim;im++) {
+		i0 = shtns->tm[im];
  B		i=i0;
  B		do {	// compute symmetric and antisymmetric parts.
 		  #ifdef SHT_3COMP
-QB			s2d sin = vdup(st[i]);
+QB			s2d sin = vdup(shtns->st[i]);
 QB			v2d q0 = ((v2d *)BrF)[i];	v2d q1 = ((v2d *)BrF)[NLAT-1-i];		re(i) = (q0+q1)*sin;	ro(i) = (q0-q1)*sin;
 		  #else
 QB			v2d q0 = ((v2d *)BrF)[i];	v2d q1 = ((v2d *)BrF)[NLAT-1-i];		re(i) = q0+q1;	ro(i) = q0-q1;		  
@@ -366,17 +369,16 @@ VB			v2d t0 = ((v2d *)BtF)[i];	v2d t1 = ((v2d *)BtF)[NLAT-1-i];		te(i) = t0+t1;	
 VB			v2d s0 = ((v2d *)BpF)[i];	v2d s1 = ((v2d *)BpF)[NLAT-1-i];		pe(i) = s0+s1;	po(i) = s0-s1;
  B			i++;
  B		} while (i<ni);
+		l = LiM(shtns, 0,im);
+Q		v2d* Ql = (v2d*) &Qlm[l];	// virtual pointer for l=0 and im
+V		v2d* Sl = (v2d*) &Slm[l];		v2d* Tl = (v2d*) &Tlm[l];
 		l=im*MRES;
-	#ifdef SHT_3COMP
-Q		double m_1 = 1.0/l;
-	#endif
-Q		v2d* Ql = (v2d*) &Qlm[LiM(0,im)];	// virtual pointer for l=0 and im
-V		v2d* Sl = (v2d*) &Slm[LiM(0,im)];		v2d* Tl = (v2d*) &Tlm[LiM(0,im)];
-Q		zl = zlm[im];
-V		dzl = dzlm[im];
+3		double m_1 = 1.0/l;
+Q		zl = shtns->zlm[im];
+V		dzl = shtns->dzlm[im];
 Q		BrF += NLAT;
 V		BtF += NLAT;	BpF += NLAT;
-		while (l<LTR) {		// ops : NLAT/2 * (2*(LMAX-m+1) + 4) : almost twice as fast.
+		while (l<llim) {		// ops : NLAT/2 * (2*(LMAX-m+1) + 4) : almost twice as fast.
 QE			v2d q0 = vdup(0.0);
 QO			v2d q1 = vdup(0.0);
 VE			v2d s0 = vdup(0.0);	v2d t1 = vdup(0.0);		v2d s0i = vdup(0.0);	v2d t1i = vdup(0.0);
@@ -401,17 +403,15 @@ Q				zl +=2;
 V				dzl +=2;
 				i++;
 			} while (i < ni);
-		  #ifdef SHT_3COMP
-Q			q0 *= vdup((l*(l+1))*m_1);
-Q			q1 *= vdup(((l+1)*(l+2))*m_1);
-		  #endif
+3			q0 *= vdup((l*(l+1))*m_1);
+3			q1 *= vdup(((l+1)*(l+2))*m_1);
 VE			Sl[l] = addi(s0,s0i);	Tl[l+1] = addi(t1,t1i);
 VO			Tl[l] = addi(t0,t0i);	Sl[l+1] = addi(s1,s1i);
 QE			Ql[l] = q0;
 QO			Ql[l+1] = q1;
 			l+=2;
 		}
-		if (l==LTR) {
+		if (l==llim) {
 			long int lstride=1;
 	  #ifdef SHT_VAR_LTR
 			if (l != LMAX) lstride=2;
@@ -433,9 +433,7 @@ Q				zl  += lstride;
 V				dzl += lstride;
 				i++;
 			} while(i<ni);
-		#ifdef SHT_3COMP
-Q			q0 *= vdup((l*(l+1))*m_1);
-		#endif
+3			q0 *= vdup((l*(l+1))*m_1);
 VE			Sl[l] = addi(s0,s0i);
 VO			Tl[l] = addi(t0,t0i);
 QE			Ql[l] = q0;
@@ -449,12 +447,20 @@ V			Sl[l] = vdup(0.0);	Tl[l] = vdup(0.0);
       #endif
 		}
 	}
+	#ifdef SHT_VAR_LTR
+	if (imlim < MMAX) {
+		im = imlim+1;
+		l = LiM(shtns, im*MRES, im);
+		do {
+Q			((v2d*)Qlm)[l] = vdup(0.0);
+V			((v2d*)Slm)[l] = vdup(0.0);		((v2d*)Tlm)[l] = vdup(0.0);
+		} while(++l < NLM);
+	}
+	#endif
 
   	if (SHT_FFT > 1) {		// free memory
-Q	    fftw_free(BrF - NLAT*(MTR+1));
-V	  #ifndef SHT_3COMP
-V	    fftw_free(BtF - NLAT*(MTR+1));	// this frees also BpF.
-V	  #endif
+Q	    fftw_free(BrF - NLAT*(imlim+1));
+VX	    fftw_free(BtF - NLAT*(imlim+1));	// this frees also BpF.
 	}
   #endif
 
@@ -475,4 +481,4 @@ V	#undef teo0
 V	#undef peo0
 Q	#undef reo0
 V	#undef tpeo0
-# }
+  }
