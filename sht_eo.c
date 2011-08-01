@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -17,7 +17,7 @@
 
 /********************************************************************
  * SHTns : Spherical Harmonic Transform for numerical simulations.  *
- *    written by Nathanael Schaeffer / LGIT,CNRS                    *
+ *    written by Nathanael Schaeffer / CNRS                         *
  ********************************************************************/
 
 // global variables definitions
@@ -42,12 +42,16 @@ void spat_to_SHeo(double *Vr, complex double *Qlm, int parity)
 
 void SHeo_sphtor_to_spat(complex double *Slm, complex double *Tlm, double *Vt, double *Vp, int parity)
 {
+#ifndef SHT_SCALAR_ONLY
 	#include "SHT/SHeost_to_spat.c"
+#endif
 }
 
 void spat_to_SHeo_sphtor(double *Vt, double *Vp, complex double *Slm, complex double *Tlm, int parity)
 {
+#ifndef SHT_SCALAR_ONLY
 	#include "SHT/spat_to_SHeost.c"
+#endif
 }
 
 //@}

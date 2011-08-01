@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -23,13 +23,23 @@
 // build interfaces to spherical harmonic transforms
 
 #ifdef SUFFIX
-  #define GEN(name,sfx) _GEN(name,sfx)
-  #define _GEN(a,b) a##b
+  #define GEN(name,sfx) GLUE2(name,sfx)
+  #define GEN3(name,nw,sfx) GLUE3(name,nw,sfx)
 #else
   #define GEN(name,sfx) name
+  #define GEN3(name,nw,sfx) GLUE2(name,nw)
 #endif
 #ifndef SUPARG
   #define SUPARG
+  #define PF2 pf2
+  #define PF3 pf3
+  #define PF4 pf4
+  #define PF6 pf6
+#else
+  #define PF2 pf2l
+  #define PF3 pf3l
+  #define PF4 pf4l
+  #define PF6 pf6l
 #endif
 #ifndef SUPARG2
   #define SUPARG2
@@ -38,69 +48,139 @@
 /// \name scalar transforms
 //@{
 
-/// \b Scalar Spherical Harmonics Transform (analysis) : convert a spatial scalar field to its spherical harmonic representation.
-void GEN(spat_to_SH,SUFFIX)(double *Vr, complex double *Qlm SUPARG)
-{
-	#include "spat_to_SH.c"
-}
+/* Scalar Spherical Harmonics Transform : from spherical harmonic representation to a spatial grid (and reverse) */
+#define ID_NME hyb
+#include "spat_to_SH.c"
+#include "SH_to_spat.c"
+#include "SHst_to_spat.c"
+#include "spat_to_SHst.c"
+#undef ID_NME
+
+#define SHT_NO_DCT
+#define ID_NME nodct
+#include "spat_to_SH.c"
+#include "SH_to_spat.c"
+#undef ID_NME
+#undef SHT_NO_DCT
+
+#define NWAY 1
+#include "spat_to_SH_fly.c"
+#include "SH_to_spat_fly.c"
+#include "spat_to_SHst_fly.c"
+#include "SHst_to_spat_fly.c"
+#undef NWAY
+#define NWAY 2
+#include "spat_to_SH_fly.c"
+#include "SH_to_spat_fly.c"
+#include "spat_to_SHst_fly.c"
+#include "SHst_to_spat_fly.c"
+#undef NWAY
+#define NWAY 3
+#include "spat_to_SH_fly.c"
+#include "SH_to_spat_fly.c"
+#include "spat_to_SHst_fly.c"
+#include "SHst_to_spat_fly.c"
+#undef NWAY
+#define NWAY 4
+#include "spat_to_SH_fly.c"
+#include "SH_to_spat_fly.c"
+#undef NWAY
+#define NWAY 6
+#include "spat_to_SH_fly.c"
+#include "SH_to_spat_fly.c"
+#undef NWAY
+#define NWAY 8
+#include "spat_to_SH_fly.c"
+#include "SH_to_spat_fly.c"
+#undef NWAY
 
 /// Backward \b Scalar Spherical Harmonic Transform (synthesis).
-void GEN(SH_to_spat,SUFFIX)(complex double *Qlm, double *Vr SUPARG)
+void GEN(SH_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Qlm, double *Vr SUPARG)
 {
-	#include "SH_to_spat.c"
+	((PF2) shtns->fptr[IVAR][SHT_TYP_SSY])(shtns, Qlm, Vr SUPARG2);
+	return;
+}
+
+void GEN(spat_to_SH,SUFFIX)(shtns_cfg shtns, double *Vr, complex double *Qlm SUPARG)
+{
+	((PF2) shtns->fptr[IVAR][SHT_TYP_SAN])(shtns, Vr, Qlm SUPARG2);
+	return;
+}
+
+/// Backward \b Vector Spherical Harmonic Transform (synthesis).
+void GEN(SHsphtor_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Slm, complex double *Tlm, double *Vt, double *Vp SUPARG)
+{
+	((PF4) shtns->fptr[IVAR][SHT_TYP_VSY])(shtns, Slm, Tlm, Vt, Vp SUPARG2);
+	return;
+}
+
+/// \b Vector Spherical Harmonics Transform (analysis) : convert a spatial vector field (theta,phi components) to its spheroidal/toroidal spherical harmonic representation.
+void GEN(spat_to_SHsphtor,SUFFIX)(shtns_cfg shtns, double *Vt, double *Vp, complex double *Slm, complex double *Tlm SUPARG)
+{
+	((PF4) shtns->fptr[IVAR][SHT_TYP_VAN])(shtns, Vt, Vp, Slm, Tlm SUPARG2);
+	return;
 }
 
 //@}
 
 
-/** \name 2D vector transforms
- * These functions use the toroidal/spheroidal representation for vectors on a sphere \f$ (v_\theta,v_\phi) \f$:
- * \f[ v_\theta = \frac{1}{\sin\theta} \frac{\partial T}{\partial \phi} + \frac{\partial S}{\partial \theta} \f]
- * \f[ v_\phi = \frac{1}{\sin\theta} \frac{\partial S}{\partial \phi} - \frac{\partial T}{\partial \theta} \f]
- * or \f$ \mathbf{v} = \nabla \times (T \mathbf{r}) + \nabla S \f$
- * where T and S are respectively the toroidal and spheroidal scalar.
- */
+/* GRADIENTS */
+#define SHT_GRAD
 
-//@{
+#define ID_NME hyb
+#include "SHs_to_spat.c"
+#include "SHt_to_spat.c"
+#undef ID_NME
 
-/// Backward \b Vector Spherical Harmonic Transform (synthesis).
-void GEN(SHsphtor_to_spat,SUFFIX)(complex double *Slm, complex double *Tlm, double *Vt, double *Vp SUPARG)
-{
-	#include "SHst_to_spat.c"
-}
+#define NWAY 1
+#include "SHs_to_spat_fly.c"
+#include "SHt_to_spat_fly.c"
+#undef NWAY
+#define NWAY 2
+#include "SHs_to_spat_fly.c"
+#include "SHt_to_spat_fly.c"
+#undef NWAY
+#define NWAY 3
+#include "SHs_to_spat_fly.c"
+#include "SHt_to_spat_fly.c"
+#undef NWAY
+#define NWAY 4
+#include "SHs_to_spat_fly.c"
+#include "SHt_to_spat_fly.c"
+#undef NWAY
+
+#undef SHT_GRAD
 
 #ifndef SHT_AXISYM
 /// Spheroidal only synthesis.
-void GEN(SHsph_to_spat,SUFFIX)(complex double *Slm, double *Vt, double *Vp SUPARG)
+void GEN(SHsph_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Slm, double *Vt, double *Vp SUPARG)
 {
-	#include "SHs_to_spat.c"
+	((PF3) shtns->fptr[IVAR][SHT_TYP_GS1])(shtns, Slm, Vt, Vp SUPARG2);
+	return;
 }
 
 /// Toroidal only synthesis.
-void GEN(SHtor_to_spat,SUFFIX)(complex double *Tlm, double *Vt, double *Vp SUPARG)
+void GEN(SHtor_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Tlm, double *Vt, double *Vp SUPARG)
 {
-	#include "SHt_to_spat.c"
+	((PF3) shtns->fptr[IVAR][SHT_TYP_GS2])(shtns, Tlm, Vt, Vp SUPARG2);
+	return;
 }
 #else
 /// Spheroidal m=0 only synthesis (results in theta component only).
-void GEN(SHsph_to_spat,SUFFIX)(complex double *Slm, double *Vt SUPARG)
+void GEN(SHsph_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Slm, double *Vt SUPARG)
 {
-	#include "SHs_to_spat.c"
+	((PF2) shtns->fptr[IVAR][SHT_TYP_GS1])(shtns, Slm, Vt SUPARG2);
+	return;
 }
 
 /// Toroidal m=0 only synthesis (results in phi component only).
-void GEN(SHtor_to_spat,SUFFIX)(complex double *Tlm, double *Vp SUPARG)
+void GEN(SHtor_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Tlm, double *Vp SUPARG)
 {
-	#include "SHt_to_spat.c"
+	((PF2) shtns->fptr[IVAR][SHT_TYP_GS2])(shtns, Tlm, Vp SUPARG2);
+	return;
 }
 #endif
 
-
-/// \b Vector Spherical Harmonics Transform (analysis) : convert a spatial vector field (theta,phi components) to its spheroidal/toroidal spherical harmonic representation.
-void GEN(spat_to_SHsphtor,SUFFIX)(double *Vt, double *Vp, complex double *Slm, complex double *Tlm SUPARG)
-{
-	#include "spat_to_SHst.c"
-}
 
 //@}
 
@@ -116,27 +196,70 @@ void GEN(spat_to_SHsphtor,SUFFIX)(double *Vt, double *Vp, complex double *Slm, c
 
 /// \b 3D Vector Spherical Harmonics Transform (analysis) : convert a 3D vector field (r,theta,phi components) to its radial/spheroidal/toroidal spherical harmonic representation.
 /// This is basically a shortcut to call both spat_to_SH* and spat_to_SHsphtor* but may be significantly faster.
-void GEN(spat_to_SHqst,SUFFIX)(double *Vr, double *Vt, double *Vp, complex double *Qlm, complex double *Slm, complex double *Tlm SUPARG)
+#define SHT_3COMP
+
+#define ID_NME hyb
+#include "spat_to_SHqst.c"
+#include "SHqst_to_spat.c"
+#undef ID_NME
+
+#define NWAY 1
+#include "spat_to_SHqst_fly.c"
+#include "SHqst_to_spat_fly.c"
+#undef NWAY
+#define NWAY 2
+#include "spat_to_SHqst_fly.c"
+#include "SHqst_to_spat_fly.c"
+#undef NWAY
+#define NWAY 3
+#include "spat_to_SHqst_fly.c"
+#include "SHqst_to_spat_fly.c"
+#undef NWAY
+#undef SHT_3COMP
+
+// combining vector and scalar.
+void GEN(SHqst_to_spat_2,SUFFIX)(shtns_cfg shtns, complex double *Qlm, complex double *Slm, complex double *Tlm, double *Vr, double *Vt, double *Vp SUPARG)
 {
-	#define SHT_3COMP
-	#include "spat_to_SHqst.c"
-	#undef SHT_3COMP
+	GEN(SH_to_spat,SUFFIX)(shtns, Qlm, Vr SUPARG2);
+	GEN(SHsphtor_to_spat,SUFFIX)(shtns, Slm, Tlm, Vt, Vp SUPARG2);
+}
+void GEN(spat_to_SHqst_2,SUFFIX)(shtns_cfg shtns, double *Vr, double *Vt, double *Vp, complex double *Qlm, complex double *Slm, complex double *Tlm SUPARG)
+{
+	GEN(spat_to_SH,SUFFIX)(shtns, Vr, Qlm SUPARG2);
+	GEN(spat_to_SHsphtor,SUFFIX)(shtns, Vt, Vp, Slm, Tlm SUPARG2);
 }
 
-/// Backward \b 3D Vector Spherical Harmonic Transform (synthesis).
-/// This is basically a shortcut to call both SH_to_spat* and SHsphtor_to spat* but may be significantly faster.
-void GEN(SHqst_to_spat,SUFFIX)(complex double *Qlm, complex double *Slm, complex double *Tlm, double *Vr, double *Vt, double *Vp SUPARG)
+void GEN(spat_to_SHqst,SUFFIX)(shtns_cfg shtns, double *Vr, double *Vt, double *Vp, complex double *Qlm, complex double *Slm, complex double *Tlm SUPARG)
 {
-	if (MTR_DCT >= 0) {
-		GEN(SH_to_spat,SUFFIX)(Qlm, Vr SUPARG2);
-		GEN(SHsphtor_to_spat,SUFFIX)(Slm, Tlm, Vt, Vp SUPARG2);
-	} else {
-		#define SHT_3COMP
-		#include "SHqst_to_spat.c"
-		#undef SHT_3COMP
-	}
+	((PF6) shtns->fptr[IVAR][SHT_TYP_3AN])(shtns, Vr, Vt, Vp, Qlm, Slm, Tlm SUPARG2);
+	return;
 }
-//@}
+
+void GEN(SHqst_to_spat,SUFFIX)(shtns_cfg shtns, complex double *Qlm, complex double *Slm, complex double *Tlm, double *Vr, double *Vt, double *Vp SUPARG)
+{
+	((PF6) shtns->fptr[IVAR][SHT_TYP_3SY])(shtns, Qlm, Slm, Tlm, Vr, Vt, Vp SUPARG2);
+	return;
+}
+
+/* FUNCTION POINTER ARRAY */
+void* GEN(sht_array, SUFFIX)[SHT_NTYP][SHT_NALG] = {
+		{ GEN(SH_to_spat_hyb, SUFFIX), NULL, GEN(SH_to_spat_fly1, SUFFIX), GEN(SH_to_spat_fly2, SUFFIX),
+		  GEN(SH_to_spat_fly3, SUFFIX), GEN(SH_to_spat_fly4, SUFFIX), GEN(SH_to_spat_fly6, SUFFIX), GEN(SH_to_spat_fly8, SUFFIX) },
+		{ GEN(spat_to_SH_hyb, SUFFIX), NULL, GEN(spat_to_SH_fly1, SUFFIX), GEN(spat_to_SH_fly2, SUFFIX),
+		  GEN(spat_to_SH_fly3, SUFFIX), GEN(spat_to_SH_fly4, SUFFIX), GEN(spat_to_SH_fly6, SUFFIX), GEN(spat_to_SH_fly8, SUFFIX) },
+		{ GEN(SHsphtor_to_spat_hyb, SUFFIX), NULL, GEN(SHsphtor_to_spat_fly1, SUFFIX), GEN(SHsphtor_to_spat_fly2, SUFFIX),
+		  GEN(SHsphtor_to_spat_fly3, SUFFIX), NULL, NULL, NULL },
+		{ GEN(spat_to_SHsphtor_hyb, SUFFIX), NULL, GEN(spat_to_SHsphtor_fly1, SUFFIX), GEN(spat_to_SHsphtor_fly2, SUFFIX),
+		  GEN(spat_to_SHsphtor_fly3, SUFFIX), NULL, NULL, NULL },
+		{ GEN(SHtor_to_spat_hyb, SUFFIX), NULL, GEN(SHtor_to_spat_fly1, SUFFIX), GEN(SHtor_to_spat_fly2, SUFFIX),
+		  GEN(SHtor_to_spat_fly3, SUFFIX), GEN(SHtor_to_spat_fly4, SUFFIX), NULL, NULL },
+		{ GEN(SHsph_to_spat_hyb, SUFFIX), NULL, GEN(SHsph_to_spat_fly1, SUFFIX), GEN(SHsph_to_spat_fly2, SUFFIX),
+		  GEN(SHsph_to_spat_fly3, SUFFIX), GEN(SHsph_to_spat_fly4, SUFFIX), NULL, NULL },
+		{ GEN(SHqst_to_spat_hyb, SUFFIX), GEN(SHqst_to_spat_2, SUFFIX), GEN(SHqst_to_spat_fly1, SUFFIX),
+		  GEN(SHqst_to_spat_fly2, SUFFIX), GEN(SHqst_to_spat_fly3, SUFFIX), NULL, NULL, NULL },
+		{ GEN(spat_to_SHqst_hyb, SUFFIX), GEN(spat_to_SHqst_2, SUFFIX), GEN(spat_to_SHqst_fly1, SUFFIX),
+		  GEN(spat_to_SHqst_fly2, SUFFIX), GEN(spat_to_SHqst_fly3, SUFFIX), NULL, NULL, NULL }
+};
 
 //@}
 
@@ -202,8 +325,6 @@ void GENF(tor_to_spat,SUFFIX)(complex double *Tlm, double *Vp SUPARGF) {
 void GENF(qst_to_spat,SUFFIX)(complex double *Qlm, complex double *Slm, complex double *Tlm, double *Vr, double *Vt, double *Vp SUPARGF)
 {
 	GEN(SHqst_to_spat,SUFFIX)(Qlm, Slm, Tlm, Vr, Vt, Vp SUPARGF2);
-//    GEN(SH_to_spat,SUFFIX)(Qlm, Vr SUPARGF2);
-//    GEN(SHsphtor_to_spat,SUFFIX)(Slm, Tlm, Vt, Vp SUPARGF2);
 }
 
 /// \ingroup fortapi
@@ -214,17 +335,15 @@ void GENF(spat_to_sphtor,SUFFIX)(double *Vt, double *Vp, complex double *Slm, co
 /// \ingroup fortapi
 void GENF(spat_to_qst,SUFFIX)(double *Vr, double *Vt, double *Vp, complex double *Qlm, complex double *Slm, complex double *Tlm SUPARGF)
 {
-    GEN(spat_to_SHsphtor,SUFFIX)(Vt, Vp, Slm, Tlm SUPARGF2);
-    GEN(spat_to_SH,SUFFIX)(Vr, Qlm SUPARGF2);
+	GEN(spat_to_SHqst,SUFFIX)(Vr, Vt, Vp, Qlm, Slm, Tlm SUPARGF2);
 }
 
 //@}
 
 #endif
 
-
 #undef GEN
-#undef _GEN
+#undef GEN3
 #undef GENF
 #undef _GENF
 #undef SUFFIX
@@ -234,3 +353,8 @@ void GENF(spat_to_qst,SUFFIX)(double *Vr, double *Vt, double *Vp, complex double
 #undef SUPARGF2
 #undef SHT_AXISYM
 #undef SHT_VAR_LTR
+#undef PF2
+#undef PF3
+#undef PF4
+#undef PF6
+#undef IVAR

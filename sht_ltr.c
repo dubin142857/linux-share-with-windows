@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -17,7 +17,7 @@
 
 /********************************************************************
  * SHTns : Spherical Harmonic Transform for numerical simulations.  *
- *    written by Nathanael Schaeffer / LGIT,CNRS                    *
+ *    written by Nathanael Schaeffer / CNRS                         *
  ********************************************************************/
 
 // global variables definitions
@@ -40,5 +40,6 @@
  * For synthesis, coefficients wiht l>ltr are ignored, but for analysis coefficient with l>ltr are set to zero.
 */
 //@{
+#define IVAR SHT_LTR
 #include "SHT/sht_generic.c"
 

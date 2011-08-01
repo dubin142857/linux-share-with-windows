@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -31,6 +31,8 @@
 
 #include "shtns.h"
 
+shtns_cfg shtns;
+
 complex double *Slm, *Slm0, *Tlm, *Tlm0, *Qlm;	// spherical harmonics l,m space
 complex double *ShF, *ThF, *NLF;	// Fourier space : theta,m
 double *Sh, *Th, *NL;		// real space : theta,phi (alias of ShF)
@@ -42,6 +44,8 @@ int NPHI = 0;
 // number of SH iterations
 long int SHT_ITER = 50;		// do 50 iterations by default
 
+// access to Gauss weights.
+extern double *wg;
 	
 void write_vect(char *fn, double *vec, int N)
 {
@@ -75,25 +79,41 @@ double scal_error(complex double *Slm, complex double *Slm0, int ltr)
 	long int jj,i, nlm_cplx;
 	double tmax,t,n2;
 
-	nlm_cplx = (MMAX*2 == NPHI) ? LiM(MRES*MMAX,MMAX) : NLM;
+	nlm_cplx = (MMAX*2 == NPHI) ? LiM(shtns, MRES*MMAX,MMAX) : NLM;
 // compute error :
 	tmax = 0;	n2 = 0;		jj=0;
 	for (i=0;i<NLM;i++) {
-	  if (li[i] <= ltr) {
 		if ((i <= LMAX)||(i >= nlm_cplx)) {		// m=0, and 2*m=nphi is real
-			Slm[i] = creal(Slm[i]-Slm0[i]);
+			if (shtns->li[i] <= ltr)	Slm[i] = creal(Slm[i]-Slm0[i]);
 			t = fabs(creal(Slm[i]));
 		} else {
-			Slm[i] -= Slm0[i];
+			if (shtns->li[i] <= ltr)	Slm[i] -= Slm0[i];
 			t = cabs(Slm[i]);
 		}
 		n2 += t*t;
 		if (t>tmax) { tmax = t; jj = i; }
-	  }
 	}
-	printf("   => max error = %g (l=%.0f,lm=%d)   rms error = %g",tmax,el[jj],jj,sqrt(n2/NLM));
-	if (tmax > 1e-3) { printf("    **** ERROR ****\n"); }
-		else printf("\n");
+	printf("   => max error = %g (l=%d,lm=%d)   rms error = %g",tmax,shtns->li[jj],jj,sqrt(n2/NLM));
+	if (tmax > 1e-3) {
+		if (NLM < 15) {
+			printf("\n orig:");
+			for (i=0; i<NLM;i++)
+				if ((i <= LMAX)||(i >= nlm_cplx)) {		// m=0, and 2*m=nphi is real
+					printf("  %g",creal(Slm0[i]));
+				} else {
+					printf("  %g,%g",creal(Slm0[i]),cimag(Slm0[i]));
+				}
+			printf("\n diff:");
+			for (i=0; i<NLM;i++)
+				if ((i <= LMAX)||(i >= nlm_cplx)) {		// m=0, and 2*m=nphi is real
+					printf("  %g",creal(Slm[i]));
+				} else {
+					printf("  %g,%g",creal(Slm[i]),cimag(Slm[i]));
+				}
+		}
+		printf("    **** ERROR ****\n");
+	}
+	else printf("\n");
 	return(tmax);
 }
 
@@ -105,19 +125,17 @@ double vect_error(complex double *Slm, complex double *Tlm, complex double *Slm0
 // compute error :
 	tmax = 0;	n2 = 0;		jj=0;
 	for (i=0;i<NLM;i++) {
-	  if (li[i] <= ltr) {
-		if ((i <= LMAX)||(i >= LiM(MRES*(NPHI+1)/2,(NPHI+1)/2))) {
-			Slm[i] = creal(Slm[i]-Slm0[i]);
+		if ((i <= LMAX)||(i >= LiM(shtns, MRES*(NPHI+1)/2,(NPHI+1)/2))) {
+			if (shtns->li[i] <= ltr)	Slm[i] = creal(Slm[i]-Slm0[i]);
 			t = fabs(creal(Slm[i]));
 		} else {
-			Slm[i] -= Slm0[i];
+			if (shtns->li[i] <= ltr)	Slm[i] -= Slm0[i];
 			t = cabs(Slm[i]);
 		}
 		n2 += t*t;
 		if (t>tmax) { tmax = t; jj = i; }
-	  }
 	}
-	printf("   Spheroidal => max error = %g (l=%.0f,lm=%d)    rms error = %g",tmax,el[jj],jj,sqrt(n2/NLM));
+	printf("   Spheroidal => max error = %g (l=%d,lm=%d)    rms error = %g",tmax,shtns->li[jj],jj,sqrt(n2/NLM));
 	if (tmax > 1e-3) { printf("    **** ERROR ****\n"); }
 		else printf("\n");
 //	write_vect("Slm",Slm,NLM*2);
@@ -125,19 +143,17 @@ double vect_error(complex double *Slm, complex double *Tlm, complex double *Slm0
 // compute error :
 	tmax = 0;	n2 = 0;		jj=0;
 	for (i=0;i<NLM;i++) {
-	  if (li[i] <= ltr) {
-		if ((i <= LMAX)||(i >= LiM(MRES*(NPHI+1)/2,(NPHI+1)/2))) {
-			Tlm[i] = creal(Tlm[i]- Tlm0[i]);
+		if ((i <= LMAX)||(i >= LiM(shtns, MRES*(NPHI+1)/2,(NPHI+1)/2))) {
+			if (shtns->li[i] <= ltr)	Tlm[i] = creal(Tlm[i]- Tlm0[i]);
 			t = fabs(creal(Tlm[i]));
 		} else {
-			Tlm[i] -= Tlm0[i];
+			if (shtns->li[i] <= ltr)	Tlm[i] -= Tlm0[i];
 			t = cabs(Tlm[i]);
 		}
 		n2 += t*t;
 		if (t>tmax) { tmax = t; jj = i; }
-	  }
 	}
-	printf("   Toroidal => max error = %g (l=%.0f,lm=%d)    rms error = %g",tmax,el[jj],jj,sqrt(n2/NLM));
+	printf("   Toroidal => max error = %g (l=%d,lm=%d)    rms error = %g",tmax,shtns->li[jj],jj,sqrt(n2/NLM));
 	if (tmax > 1e-3) { printf("    **** ERROR ****\n"); }
 		else printf("\n");
 //	write_vect("Tlm",Tlm,NLM*2);
@@ -147,26 +163,31 @@ int test_SHT()
 {
 	long int jj,i, nlm_cplx;
 	clock_t tcpu;
+	double ts, ta;
 
 	for (i=0;i<NLM;i++) Slm[i] = Slm0[i];	// restore test case...
+
 	tcpu = clock();
 	for (jj=0; jj< SHT_ITER; jj++) {
-// synthese (inverse legendre)
-		SH_to_spat(Slm,Sh);
-//		SH_to_spat(Tlm,Th);
-//		for (i=0; i< NLAT*NPHI; i++) {
-//			ThF[i] *= ShF[i];
-//		}
-// analyse (direct legendre)
-		spat_to_SH(Sh,Slm);
+		SH_to_spat(shtns, Slm,Sh);
 	}
 	tcpu = clock() - tcpu;
-	printf("   2iSHT + NL + SHT x%d time : %d\n", SHT_ITER, (int )tcpu);
+	ts = tcpu / (1000.*SHT_ITER);
+
+	tcpu = clock();
+	spat_to_SH(shtns, Sh,Slm);
+	for (jj=1; jj< SHT_ITER; jj++) {
+		spat_to_SH(shtns, Sh,Tlm);
+	}
+	tcpu = clock() - tcpu;
+	ta = tcpu / (1000.*SHT_ITER);
+	printf("   SHT time : \t synthesis = %f ms \t analysis = %f ms\n", ts, ta);
 
 	scal_error(Slm, Slm0, LMAX);
 	return (int) tcpu;
 }
 
+/*
 int test_SHT_parity(int eo)
 {
 	long int jj,i, nlm_cplx;
@@ -180,32 +201,36 @@ int test_SHT_parity(int eo)
 		spat_to_SHeo(Sh,Slm,eo);
 	}
 	tcpu = clock() - tcpu;
-	printf("   2iSHT + NL + SHT x%d time : %d\n", SHT_ITER, (int )tcpu);
+	printf("   2iSHT + NL + SHT x%d time : %d ms\n", SHT_ITER, (int )tcpu / 1000);
 
 	scal_error(Slm, Slm0, LMAX);
 	return (int) tcpu;
 }
+*/
 
 int test_SHT_l(int ltr)
 {
 	int jj,i;
 	clock_t tcpu;
+	double ts, ta;
 
 	for (i=0;i<NLM;i++) Slm[i] = Slm0[i];	// restore test case...
-	for (i=0;i<NLM;i++) Tlm[i] = Tlm0[i];	// restore test case...
+
 	tcpu = clock();
 	for (jj=0; jj< SHT_ITER; jj++) {
-// synthese (inverse legendre)
-		SH_to_spat_l(Slm,Sh,ltr);
-		SH_to_spat_l(Tlm,Th,ltr);
-		for (i=0; i< NLAT*NPHI; i++) {
-			ThF[i] *= ShF[i];
-		}
-// analyse (direct legendre)
-		spat_to_SH_l(Sh,Slm,ltr);
+		SH_to_spat_l(shtns, Slm,Sh,ltr);
 	}
 	tcpu = clock() - tcpu;
-	printf("   2iSHT + NL + SHT x%d with L-truncation at %d. time : %d\n", SHT_ITER, ltr, (int )tcpu);
+	ts = tcpu / (1000.*SHT_ITER);
+
+	tcpu = clock();
+		spat_to_SH_l(shtns, Sh,Slm,ltr);
+	for (jj=1; jj< SHT_ITER; jj++) {
+		spat_to_SH_l(shtns, Sh,Tlm,ltr);
+	}
+	tcpu = clock() - tcpu;
+	ta = tcpu / (1000.*SHT_ITER);
+	printf("   SHT time truncated at l=%d : synthesis = %f ms, analysis = %f ms\n", ltr, ts, ta);
 
 	scal_error(Slm, Slm0, ltr);
 	return (int) tcpu;
@@ -215,18 +240,30 @@ int test_SHT_vect_l(int ltr)
 {
 	int jj,i;
 	clock_t tcpu;
+	double ts, ta;
+
+	complex double *S2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
+	complex double *T2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
 
 	for (i=0;i<NLM;i++) {
 		Slm[i] = Slm0[i];	Tlm[i] = Tlm0[i];
 	}
 	tcpu = clock();
 	for (jj=0; jj< SHT_ITER; jj++) {
-		SHsphtor_to_spat_l(Slm,Tlm,Sh,Th,ltr);
-		spat_to_SHsphtor_l(Sh,Th,Slm,Tlm, ltr);
+		SHsphtor_to_spat_l(shtns, Slm,Tlm,Sh,Th,ltr);
 	}
 	tcpu = clock() - tcpu;
-	printf("   iSHT + SHT x%d with L-truncation at %d. time : %d\n", SHT_ITER, ltr, (int) tcpu);
+	ts = tcpu / (1000.*SHT_ITER);
+	tcpu = clock();
+		spat_to_SHsphtor_l(shtns, Sh,Th,Slm,Tlm, ltr);
+	for (jj=1; jj< SHT_ITER; jj++) {
+		spat_to_SHsphtor_l(shtns, Sh,Th,S2,T2, ltr);
+	}
+	tcpu = clock() - tcpu;
+	ta = tcpu / (1000.*SHT_ITER);
+	printf("   vector SHT time trucated at l=%d : \t synthesis %f ms \t analysis %f ms\n", ltr, ts, ta);
 
+	fftw_free(T2);	fftw_free(S2);
 	vect_error(Slm, Tlm, Slm0, Tlm0, ltr);
 	return (int) tcpu;
 }
@@ -235,78 +272,31 @@ int test_SHT_vect()
 {
 	int jj,i;
 	clock_t tcpu;
+	double ts, ta;
+
+	complex double *S2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
+	complex double *T2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
 
 	for (i=0;i<NLM;i++) {
 		Slm[i] = Slm0[i];	Tlm[i] = Tlm0[i];
 	}
 	tcpu = clock();
 	for (jj=0; jj< SHT_ITER; jj++) {
-		SHsphtor_to_spat(Slm,Tlm,Sh,Th);
-		spat_to_SHsphtor(Sh,Th,Slm,Tlm);
+		SHsphtor_to_spat(shtns, Slm,Tlm,Sh,Th);
 	}
 	tcpu = clock() - tcpu;
-	printf("   iSHT + SHT x%d time : %d\n", SHT_ITER, (int) tcpu);
-
-	vect_error(Slm, Tlm, Slm0, Tlm0, LMAX);
-	return (int) tcpu;
-}
-
-int test_SHT_vect_parity(int eo)
-{
-	int jj,i;
-	clock_t tcpu;
-
-	for (i=0;i<NLM;i++) {
-		Slm[i] = Slm0[i];	Tlm[i] = Tlm0[i];
-	}
+	ts = tcpu / (1000.*SHT_ITER);
 	tcpu = clock();
-	for (jj=0; jj< SHT_ITER; jj++) {
-		SHeo_sphtor_to_spat(Slm,Tlm,Sh,Th, eo);
-		spat_to_SHeo_sphtor(Sh,Th,Slm,Tlm, eo);
+		spat_to_SHsphtor(shtns, Sh,Th,Slm,Tlm);
+	for (jj=1; jj< SHT_ITER; jj++) {
+		spat_to_SHsphtor(shtns, Sh,Th,S2,T2);
 	}
 	tcpu = clock() - tcpu;
-	printf("   iSHT + SHT x%d time : %d\n", SHT_ITER, (int) tcpu);
+	ta = tcpu / (1000.*SHT_ITER);
+	printf("   vector SHT time : \t synthesis %f ms \t analysis %f ms\n", ts, ta);
 
+	fftw_free(T2);	fftw_free(S2);
 	vect_error(Slm, Tlm, Slm0, Tlm0, LMAX);
-	return (int) tcpu;
-}
-
-int test_SHT_vect_m0()
-{
-	int jj,i;
-	clock_t tcpu;
-
-	for (i=0;i<NLM;i++) {
-		Slm[i] = Slm0[i];	Tlm[i] = Tlm0[i];
-	}
-	tcpu = clock();
-	for (jj=0; jj< SHT_ITER; jj++) {
-		SHsph_to_spat_m0(Slm,Sh);
-		SHtor_to_spat_m0(Tlm,Th);
-		spat_to_SHsphtor_m0(Sh,Th,Slm,Tlm);
-	}
-	tcpu = clock() - tcpu;
-	printf("   iSHT + SHT x%d time : %d\n", SHT_ITER, (int) tcpu);
-
-	vect_error(Slm, Tlm, Slm0, Tlm0, LMAX);
-	return (int) tcpu;
-}
-
-int test_SHT_m0()
-{
-	int jj,i;
-	clock_t tcpu;
-
-	for (i=0;i<NLM;i++) Slm[i] = Slm0[i];	// restore test case...
-	tcpu = clock();
-	for (jj=0; jj< SHT_ITER; jj++) {
-		SH_to_spat_m0(Slm,Sh);
-		spat_to_SH_m0(Sh,Slm);
-	}
-	tcpu = clock() - tcpu;
-	printf("   iSHT + SHT x%d, m=0 only. time : %d\n", SHT_ITER, (int )tcpu);
-
-	scal_error(Slm, Slm0, LMAX);
 	return (int) tcpu;
 }
 
@@ -314,23 +304,35 @@ int test_SHT_vect3d()
 {
 	int jj,i;
 	clock_t tcpu;
+	double ts, ta;
+	
+	complex double *Q2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
+	complex double *S2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
+	complex double *T2 = (complex double *) fftw_malloc(sizeof(complex double)* NLM);
 	
 	for (i=0;i<NLM;i++) {
 		Slm[i] = Slm0[i];	Tlm[i] = Tlm0[i];	Qlm[i] = Tlm0[i];
 	}
+
 	tcpu = clock();
 	for (jj=0; jj< SHT_ITER; jj++) {
-		SHqst_to_spat(Qlm,Slm,Tlm,NL,Sh,Th);
-		spat_to_SHqst(NL,Sh,Th,Qlm,Slm,Tlm);
+		SHqst_to_spat(shtns, Qlm,Slm,Tlm,NL,Sh,Th);
 	}
 	tcpu = clock() - tcpu;
-	printf("   iSHT + SHT x%d time : %d\n", SHT_ITER, (int) tcpu);
+	ts = tcpu / (1000.*SHT_ITER);
+	tcpu = clock();
+		spat_to_SHqst(shtns, NL,Sh,Th,Qlm,Slm,Tlm);
+	for (jj=1; jj< SHT_ITER; jj++) {
+		spat_to_SHqst(shtns, NL,Sh,Th,Q2,S2,T2);
+	}
+	tcpu = clock() - tcpu;
+	ta = tcpu / (1000.*SHT_ITER);
+	printf("   3D vector SHT time : \t synthesis %f ms \t analysis %f ms\n", ts, ta);
 
 	vect_error(Slm, Tlm, Slm0, Tlm0, LMAX);
 	scal_error(Qlm, Tlm0, LMAX);
 	return (int) tcpu;
 }
-
 
 /*
 fftw_plan ifft_in, ifft_out;
@@ -455,10 +457,14 @@ void usage()
 	printf(" -polaropt=<thr> : set the threshold for polar optimization. 0 for no polar optimization, 1.e-6 for agressive.\n");
 	printf(" -iter=<n> : set the number of back-and-forth transforms to compute timings and errors.\n");
 	printf(" -gauss : force gauss grid\n");
+	printf(" -fly : force gauss grid with on-the-fly computations only\n");
+	printf(" -quickinit : force gauss grid and fast initialiation time (but suboptimal fourier transforms)\n");
 	printf(" -reg : force regular grid\n");
 	printf(" -oop : force out-of-place transform\n");
 	printf(" -transpose : force transpose data (ie phi varies fastest)\n");
 	printf(" -nlorder : define non-linear order to be resolved.\n");
+	printf(" -schmidt : use schmidt semi-normalization.\n");
+	printf(" -4pi : use 4pi normalization.\n");
 }
 
 int main(int argc, char *argv[])
@@ -475,12 +481,21 @@ int main(int argc, char *argv[])
 	int layout = SHT_NATIVE_LAYOUT;
 	int nlorder = 0;
 	char name[20];
+	FILE* fw;
 
 	srand( time(NULL) );	// initialise les nombres.
 
 	printf("time_SHT performs some spherical harmonic transforms, and displays timings and accuracy.\n");
 	if (argc < 2) {
 		usage();	exit(1);
+	}
+
+// if some wisdom has been saved, reload it.
+	fw = fopen("fftw_wisdom","r");
+	if (fw != NULL) {
+		printf("> FFTW wisdom found.\n");
+		fftw_import_wisdom_from_file(fw);
+		fclose(fw);
 	}
 
 //	first argument is lmax, and is mandatory.
@@ -496,6 +511,7 @@ int main(int argc, char *argv[])
 		if (strcmp(name,"polaropt") == 0) polaropt = t;
 		if (strcmp(name,"iter") == 0) SHT_ITER = t;
 		if (strcmp(name,"gauss") == 0) shtmode = sht_gauss;		// force gauss grid.
+		if (strcmp(name,"fly") == 0) shtmode = sht_gauss_fly;		// force gauss grid with on-the-fly computation.
 		if (strcmp(name,"reg") == 0) shtmode = sht_reg_fast;	// force regular grid.
 		if (strcmp(name,"quickinit") == 0) shtmode = sht_quick_init;	// Gauss grid and fast initialization time, but suboptimal fourier transforms.
 		if (strcmp(name,"schmidt") == 0) shtnorm = sht_schmidt | SHT_NO_CS_PHASE;
@@ -506,10 +522,20 @@ int main(int argc, char *argv[])
 	}
 
 	if (MMAX == -1) MMAX=LMAX/MRES;
-	NLM = shtns_set_size(LMAX, MMAX, MRES, shtnorm);
-	shtns_precompute_auto(shtmode | layout, polaropt, nlorder, &NLAT, &NPHI);
+	shtns = shtns_create(LMAX, MMAX, MRES, shtnorm);
+	NLM = nlm_calc(LMAX, MMAX, MRES);
+	shtns_set_grid_auto(shtns, shtmode | layout, polaropt, nlorder, &NLAT, &NPHI);
 
-	m_opt = Get_MTR_DCT();
+	print_shtns_cfg(shtns, 1);
+
+// now would be a good time to save fftw's wisdom.
+	fw = fopen("fftw_wisdom","w");
+	if (fw != NULL) {
+		fftw_export_wisdom_to_file(fw);
+		fclose(fw);
+	}
+
+	m_opt = Get_MTR_DCT(shtns);
 /*
 	t1 = 1.0+2.0*I;
 	t2 = 1.0-I;
@@ -519,8 +545,8 @@ int main(int argc, char *argv[])
 	(double) t2 = 8.1;
 	printf("test : %f, %f, %f, %f\n",creal(t1),cimag(t1), creal(t2),cimag(t2));
 */
-	write_vect("cost",ct,NLAT);
-	write_vect("sint",st,NLAT);
+//	write_vect("cost",ct,NLAT);
+//	write_vect("sint",st,NLAT);
 
 	ShF = (complex double *) fftw_malloc( 4*(NPHI/2+1) * NLAT * sizeof(complex double));
 	Sh = (double *) ShF;
@@ -540,8 +566,9 @@ int main(int argc, char *argv[])
 //	do_fft_tests();
 //	exit(0);
 
-	Set_MTR_DCT(MMAX);
+	Set_MTR_DCT(shtns, MMAX);
 
+  if (NLM < 10000) {
 // SH_to_spat
 	for (i=0;i<NLM;i++) {
 		Slm[i] = 0.0;	Tlm[i] = 0.0;
@@ -551,12 +578,13 @@ int main(int argc, char *argv[])
 			Sh[im*NLAT+i] = 0.0;
 		}
 	}
-	Slm[LiM(1,0)] = sh10_ct();
-	Slm[LiM(1,1)] = sh11_st();
+	Slm[LiM(shtns, 1,0)] = sh10_ct(shtns);
+	if ((MMAX > 0)&&(MRES==1))
+		Slm[LiM(shtns, 1,1)] = sh11_st(shtns);
 //	write_vect("ylm0",Slm, NLM*2);
-	SH_to_spat(Slm,Sh);
+	SH_to_spat(shtns, Slm,Sh);
 	write_mx("spat",Sh,NPHI,NLAT);
-	SHsphtor_to_spat(Slm,Tlm,Sh,Th);
+	SHsphtor_to_spat(shtns, Slm,Tlm,Sh,Th);
 	write_mx("spatt",Sh,NPHI,NLAT);
 	write_mx("spatp",Th,NPHI,NLAT);
 
@@ -586,13 +614,15 @@ int main(int argc, char *argv[])
 // spat_to_SH
 	for (im=0;im<NPHI;im++) {
 		for (i=0;i<NLAT;i++) {
-			Sh[im*NLAT+i] = ct[i];
+			Sh[im*NLAT+i] = shtns->ct[i];
 		}
 	}
-	spat_to_SH(Sh,Slm);
+	spat_to_SH(shtns, Sh,Slm);
 	write_vect("ylm",(double *)Slm,NLM*2);
+  }
 
 // test case...
+	printf("generating random test case...\n");
 	t = 1.0 / (RAND_MAX/2);
 	for (i=0;i<NLM;i++) {
 		Slm0[i] = t*((double) (rand() - RAND_MAX/2)) + I*t*((double) (rand() - RAND_MAX/2));
@@ -601,81 +631,76 @@ int main(int argc, char *argv[])
 
 //	printf("** performing %d scalar SHT with NL evaluation\n", SHT_ITER);
 	printf("** performing %d scalar SHT\n", SHT_ITER);
+  if (m_opt >= 0) {
 	printf(":: OPTIMAL\n");
-	Set_MTR_DCT(m_opt);
+	Set_MTR_DCT(shtns, m_opt);
 	test_SHT();
 	printf(":: FULL DCT\n");
-	Set_MTR_DCT(MMAX);
+	Set_MTR_DCT(shtns, MMAX);
 	test_SHT();
+  }
 	printf(":: NO DCT\n");
-	Set_MTR_DCT(-1);
+	Set_MTR_DCT(shtns, -1);
 	test_SHT();
 
+  if (m_opt >= 0) {
 	printf(":: OPTIMAL with LTR\n");
-	Set_MTR_DCT(m_opt);
+	Set_MTR_DCT(shtns, m_opt);
 	test_SHT_l(LMAX/2);
 	printf(":: FULL DCT with LTR\n");
-	Set_MTR_DCT(MMAX);
+	Set_MTR_DCT(shtns, MMAX);
 	test_SHT_l(LMAX/2);
+  }
 	printf(":: NO DCT with LTR\n");
-	Set_MTR_DCT(-1);
+	Set_MTR_DCT(shtns, -1);
 	test_SHT_l(LMAX/2);
-
-	printf(":: OPTIMAL m=0\n");
-	Set_MTR_DCT(m_opt);
-	test_SHT_m0();
-	printf(":: FULL DCT m=0\n");
-	Set_MTR_DCT(MMAX);
-	test_SHT_m0();
-	printf(":: NO DCT m=0\n");
-	Set_MTR_DCT(-1);
-	test_SHT_m0();
-
-	printf(":: scalar even\n");
-	test_SHT_parity(0);
-	printf(":: scalar odd\n");
-	test_SHT_parity(1);
 
 #define TEST_VECT_SHT
 #ifdef TEST_VECT_SHT
-	Slm0[LM(0,0)] = 0.0;	// l=0, m=0 n'a pas de signification sph/tor
-	Tlm0[LM(0,0)] = 0.0;	// l=0, m=0 n'a pas de signification sph/tor
+	Slm0[LM(shtns, 0,0)] = 0.0;	// l=0, m=0 n'a pas de signification sph/tor
+	Tlm0[LM(shtns, 0,0)] = 0.0;	// l=0, m=0 n'a pas de signification sph/tor
 //	for (i=0;i<NLM;i++) Slm0[i] = 0.0;	// zero out Slm.
 
 	printf("** performing %d vector SHT\n", SHT_ITER);
+  if (m_opt >= 0) {
 	printf(":: OPTIMAL\n");
-	Set_MTR_DCT(m_opt);
+	Set_MTR_DCT(shtns, m_opt);
 	test_SHT_vect();
 	printf(":: FULL DCT\n");
-	Set_MTR_DCT(MMAX);
+	Set_MTR_DCT(shtns, MMAX);
 	test_SHT_vect();
+  }
 	printf(":: NO DCT\n");
-	Set_MTR_DCT(-1);
+	Set_MTR_DCT(shtns, -1);
 	test_SHT_vect();
 
+  if (m_opt >= 0) {
 	printf(":: OPTIMAL with LTR\n");
-	Set_MTR_DCT(m_opt);
+	Set_MTR_DCT(shtns, m_opt);
 	test_SHT_vect_l(LMAX/2);
 	printf(":: FULL DCT with LTR\n");
-	Set_MTR_DCT(MMAX);
+	Set_MTR_DCT(shtns, MMAX);
 	test_SHT_vect_l(LMAX/2);
+  }
 	printf(":: NO DCT with LTR\n");
-	Set_MTR_DCT(-1);
+	Set_MTR_DCT(shtns, -1);
 	test_SHT_vect_l(LMAX/2);
-
-	printf(":: vector m=0\n");
-	Set_MTR_DCT(m_opt);
-	test_SHT_vect_m0();
-
-	printf(":: vector even\n");
-	test_SHT_vect_parity(0);
-	printf(":: vector odd\n");
-	test_SHT_vect_parity(1);
 	
-	printf(":: 3D vector\n");
+	printf("** performing %d 3D vector SHT (no DCT) \n", SHT_ITER);
+  if (m_opt >= 0) {
+	printf(":: OPTIMAL\n");
+	Set_MTR_DCT(shtns, m_opt);
+	test_SHT_vect3d();
+	printf(":: FULL DCT\n");
+	Set_MTR_DCT(shtns, MMAX);
+	test_SHT_vect3d();
+  }
+	printf(":: NO DCT\n");
+	Set_MTR_DCT(shtns, -1);
 	test_SHT_vect3d();
 
 #endif
 
+	shtns_reset();
 }
 

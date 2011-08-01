@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2010 Centre National de la Recherche Scientifique.
- * written by Nathanael Schaeffer (CNRS, LGIT, Grenoble, France).
+ * Copyright (c) 2010-2011 Centre National de la Recherche Scientifique.
+ * written by Nathanael Schaeffer (CNRS, ISTerre, Grenoble, France).
  * 
  * nathanael.schaeffer@ujf-grenoble.fr
  * 
@@ -17,22 +17,19 @@
 
 /********************************************************************
  * SHTns : Spherical Harmonic Transform for numerical simulations.  *
- *    written by Nathanael Schaeffer / LGIT,CNRS                    *
+ *    written by Nathanael Schaeffer / CNRS                         *
  ********************************************************************/
 
 /// \file sht_config.h compile-time configuration.
 
 /// 0:no output, 1:output info to stdout, 2:more output (debug info), 3:also print fftw plans.
-#define SHT_VERBOSE 1
+#define SHT_VERBOSE 2
 
-// if SHT_AXISYM is defined, an axisymmetric-only transform will be compiled.
-//#define SHT_AXISYM
-
-// if SHT_NO_DCT is defined, no DCT support will be compiled. (Gauss-legendre only).
-//#define SHT_NO_DCT
+/// defines the maximum amount of memory in megabytes that SHTns should use.
+#define SHTNS_MAX_MEMORY 2048
 
 /// Compile the \ref fortapi
-#define SHT_F77_API
+//#define SHT_F77_API
 
 
 /// Minimum performance improve for DCT in \ref sht_auto mode. If not atained, we switch back to gauss.
@@ -50,8 +47,17 @@
 /// The maximum order of non-linear terms to be resolved by SH transform by default.
 /// 1 : no non-linear terms. 2 : quadratic non-linear terms (default), 3 : triadic, ...
 /// must be larger or equal to 1.
-#define SHT_DEFAULT_NL_ORDER 2
+#define SHT_DEFAULT_NL_ORDER 1
 
 /// I compile with GCC 4 or later, and I would like fast vectorized code (if SSE2 is supported) !
 /// (set to zero to disable, may be useful for calling from Fortran)
 #define _GCC_VEC_ 1
+
+// if SHT_SCALAR_ONLY is defined, it will disable the vector transform (which saves some memory)
+//#define SHT_SCALAR_ONLY
+
+// if SHT_AXISYM is defined, an axisymmetric-only transform will be compiled.
+//#define SHT_AXISYM
+
+// if SHT_NO_DCT is defined, no DCT support will be compiled. (Gauss-legendre only).
+//#define SHT_NO_DCT

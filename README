@@ -10,19 +10,21 @@ Then browse the html documentation starting with doc/html/index.html
  * Send an email to nathanael.schaeffer@ujf-grenoble.fr to be informed on release or request a pre-version.
  *
  * Main features :
- * - both scalar and vector transforms
+ * - both <b>scalar and vector transforms</b>
  * - backward and forward (synthesis and analysis) functions
  * - flexible truncation
  * - spatial data can be stored in latitude-major or longitude-major order arrays.
  * - various conventions (normalization and Condon-Shortley phase)
- * - can be used from fortran or c/c++ programs
- * - a highly efficient Gauss algorithm working with gauss nodes (based on Gauss-Legendre quadrature)
- * - an even faster algorithm using DCT for regular nodes (based on a generalized Fejer quadrature)
+ * - can be used from <b>fortran or c/c++</b> programs
+ * - a highly efficient Gauss algorithm working with <b>Gauss nodes</b> (based on Gauss-Legendre quadrature)
+ * - an even faster algorithm using DCT for <b>regular nodes</b> (based on a generalized Fejer quadrature)
  * - support for SSE2 & SSE3 vectorization with gcc.
  * - synthesis (inverse transform) at any coordinate (not constrained to a grid) useful for rendering purposes.
  * - ability to choose the optimal spatial sizes for a given spherical harmonic truncation.
+ * - <b>on-the-fly transforms</b> : saving memory and bandwidth, and can even be faster depending on architecture.
+ * - accurate up to spherical harmonic degree l=2700 (at least).
  *
- * Using DCT acceleration and other classical optimizations, it is intended to be <b>very fast</b>.
+ * Using DCT acceleration and other classical \link opt optimizations\endlink, it is intended to be \link bench very fast\endlink.
  *
  * It uses the <a href="http://www.fftw.org/">FFTW</a> library for Fast Fourier Transforms, and is distributed under the open source CeCILL License.
  *
@@ -31,13 +33,16 @@ Then browse the html documentation starting with doc/html/index.html
  * \see The organisation of data used by SHTns is described in \ref spat.
  * \see The description of \ref opt.
  *
- * \author SHTns is written by Nathanael Schaeffer (LGIT, CNRS)
+ * \author SHTns is written by Nathanael Schaeffer (CNRS)
+ *
+ * \image html logo_cnrs_small.png
+ *
 */
 
 
 /** \page compil Compiling and installing SHTns
 
-To compile SHTns, you need a C compiler and the FFTW library version 3.0 or later carefully installed.
+To compile SHTns, you need a C compiler and the FFTW library version 3.3 or later carefully installed.
 We recommend using GCC 4.0 or later as it will produce the fastest vectorized code on x86_64 architecture.
 
 You should edit the Makefile to adapt it to your architecture and compiler. In particular, using gcc or icc will not lead to the same performance, and you
@@ -65,7 +70,7 @@ Look at the FFTW manual for compilation advice.</b>
 
 The angular coordinates on a spherical shell are the co-latitude \f$ \theta \f$ and the longitude \f$ \phi \f$.
 
-The spatial discretization is defined by a call to \ref shtns_init; or to \ref shtns_precompute or \ref shtns_precompute_auto after \ref shtns_set_size.
+The spatial discretization is defined by a call to \ref shtns_init; or to \ref shtns_set_grid or \ref shtns_set_grid_auto after \ref shtns_create.
 
 A field \e A (or one of its component in case of a vector field) is discretized on an ordered grid, which consists of
  - NPHI equally spaced nodes in longitude, spanning the range of angle between 0 and \f$2\pi\f$/MRES,
@@ -81,11 +86,11 @@ exist. For a given non-linear order of the equation N (typically 2), the anti-al
  - NLAT > N*LMAX for our DCT quadrature
 
 Furthermore, FFT is more efficient for certain values of NPHI and/or NLAT. If you do not require specific NLAT or NPHI, you can let SHTns choose them
-for you, by using \ref shtns_precompute_auto with nphi and or nlat set to zero.
+for you, by using \ref shtns_set_grid_auto with nphi and or nlat set to zero.
 
 Identifying a grid point with its indices \c it and \c ip in latitudinal and longitudinal direction respectively (indices start at 0), one has :
  - \f$ \theta \f$ = \c acos(ct[it]) where \ref ct is initialized by the call to \ref shtns_init
- - \f$ \phi \f$ = \c ip * 2\f$\pi\f$/(NPHI*MRES)
+ - \f$ \phi \f$ = \c ip * 2\f$\pi\f$/(NPHI*MRES)  and \ref PHI_RAD and \ref PHI_DEG can be used to get the phi angle corresponding to \c ip.
  - How to access \f$ A(\theta,\phi) \f$ depends on the data layout, but it is always <b>a contiguous array of double precision floating point values</b> (64 bit)
 
 Currently, three data layouts are supported. \ref phi_fast, \ref theta_fast, and \ref native.
@@ -133,7 +138,7 @@ In addition, spatial data must be allocated using the \c fftw_malloc function, f
 \section spec_data Spherical Harmonic coefficients layout
 
 <b>The collection of Alm (spherical harmonics coefficient of degree \e l and order \e m) is stored in an array of \c complex \c double floating point values.</b>
-The spherical harmonic truncation is defined by a call to \ref shtns_init or to \ref shtns_set_size which returns the size NLM of the array.
+The spherical harmonic truncation is defined by a call to \ref shtns_init or to \ref shtns_create which returns the size NLM of the array.
 
 The field \em A is decomposed on the basis of spherical harmonics Ylm (degree \e l, order \e m) :
 \f[ A(\theta,\phi) = \sum_{l,m} A_l^m Y_l^m(\theta,\phi)\f]
@@ -146,6 +151,9 @@ The details of the storage may depend on the algorithm, and to access a particul
  - \ref LiM(l,im) gives the index in the array for coefficient of degree \e l and order \e im*MRES.
 
 Hence \c Alm[LM(l,m)] is the SH coefficient of degree \e l and order \e m.
+
+\note Since SHTns only deals with real spatial data, the Spherical Harmonic coefficients wiht negative \e m are the complex conjugate of the
+positive \e m coefficents : \f$ A_l^{-m} = (A_l^m)^*\f$. For efficiency purposes, only the coefficients with positive \e m are stored.
 
 \note There is no test on bounds, so that LM(l,m) with \e l or \e m that is not described, will give undefined result
 (in particular for an \e m that is not a multiple of \c MRES)
@@ -178,7 +186,7 @@ SHTns lets you choose one of the following :
 </li></ul>
 
 \ref shtns_init uses the default (defined by \ref SHT_DEFAULT_NORM) but you can choose another normalization
-by calling \ref shtns_set_size instead.
+by calling \ref shtns_create instead.
 
 The legendre associated functions are defined by :
 
@@ -190,16 +198,16 @@ For reference, function \ref SH_to_point gives a simple explicit implementation 
 
 \subsection norm_opt Normalization variations
 
-Use \ref shtns_set_size with \ref SHT_NO_CS_PHASE to disable the <b>Condon-Shortley phase</b>.
+Use \ref shtns_create with \ref SHT_NO_CS_PHASE to disable the <b>Condon-Shortley phase</b>.
 For example, to initialize a Schmidt semi-normalized transform of maximum degree 16 without Condon-Shortrley phase, use
-\code shtns_set_size(16, 16, 1, sht_schmidt | SHT_NO_CS_PHASE); \endcode
+\code shtns_create(16, 16, 1, sht_schmidt | SHT_NO_CS_PHASE); \endcode
 
 By default, SHTns uses "complex" spherical harmonic normalization. However, as it deals only with real functions,
 the m<0 coefficients are not stored, since they are complex conjugate of the m>0 ones.
 Thus, one must pay attention, that the m>0 coefficient have to be counted twice in a total energy calculation.
 
 An alternative to this "complex" normalization is the "real" normalization, for which the energy is simply
-the sum of the coefficients (m>=0) squared. Use \ref shtns_set_size with \ref SHT_REAL_NORM to use a "real" spherical harmonic normalization.
+the sum of the coefficients (m>=0) squared. Use \ref shtns_create with \ref SHT_REAL_NORM to use a "real" spherical harmonic normalization.
 This is the usual "real" spherical harmonics, if one takes the complex conjugate of the coefficients.
 
 A few useful examples, for orthonormal spherical harmonics :
@@ -245,7 +253,7 @@ transforms.
 A less common, but still classic optimization : high m's spherical harmonics have their magnitude descrease exponentially
 when aproaching the poles. SHTns use a threshold below which the SH is taken to be zero.
 The default value for this threshold is defined by \ref SHT_DEFAULT_POLAR_OPT,
-but you can also choose it with the \c eps parameter of the \ref shtns_precompute function,
+but you can also choose it with the \c eps parameter of the \ref shtns_set_grid function,
 trading some accuracy for more speed.
 Around 5% to 15% speed increase are typical values for a SHT with a large MMAX.
 
@@ -256,8 +264,8 @@ This means ordering coefficients and stripping out systematic zeros.
 
 \section opt_size Spatial Size optimization
 
-When using \ref shtns_precompute_auto, you can let SHTns choose the optimal spatial sizes for
-the spherical harmonic truncation you specified with \ref shtns_set_size.
+When using \ref shtns_set_grid_auto, you can let SHTns choose the optimal spatial sizes for
+the spherical harmonic truncation you specified with \ref shtns_create.
 The spatial sizes are chosen so that no aliasing occurs, and ensuring FFTW will perform as fast
 as possible.
 
@@ -281,31 +289,50 @@ almost half the grid points as usual.
 
 The theoretical result is that for a function band-limited by L, L+2 equispaced grid-points allow us
 to fully recover the spectral content.
-There is still a drawback for non-linear terms : for a non-linear product of two functions band-limited to L,
+There is, however, a drawback for non-linear terms : for a product of two functions band-limited to L,
 we would require L*2+2 grid points, whereas the Gauss-Legendre quadrature would only require (L+1)*3/2 grid-points if we
 are interested in only the first L modes of the product.
 
 There is a slight loss of accuracy due to round-off errors (as an example, relative errors
 with DCT are around \c 1.e-11 instead of \c 1.e-12 without for lmax around 500).
-If you can live with it, the DCT-based algorithm performs much faster on small m's :
-twice as fast for axisymmetric transforms, and between 1.5 and 1.2 times faster on non-axisymmetric ones.
-For large m's however the spatial-domain polar optimization takes the lead.
+If you can live with it (you really should), the DCT-based algorithm performs much faster on small m's :
+twice to four times faster for axisymmetric transforms, and between 1.5 and 1.2 times faster on non-axisymmetric ones.
+For large m's however, the spatial-domain polar optimization takes the lead.
 
 Note also that the DCT algorithm, while beeing usually faster, requires significantly larger init time. It
 is then suitable for performing many transforms (as in a direct numerical simulations).
-
-<b>Warning : this is still at the research stage (beta), you should use with caution and test before production use.</b>
 
 \section opt_runtime Runtime tuning of algorithm
 
 The default mode used by SHTns is to measure performance of the different algorithms, and choose
 the one that performs best (it will also check that the accuracy is good enough).
 However, there are situation where either the Gauss-Legendre algorithm or a regular grid is required, and you
-can choose to do so using the adequate \ref shtns_type when calling \ref shtns_init or \ref shtns_precompute.
+can choose to do so using the adequate \ref shtns_type when calling \ref shtns_init or \ref shtns_set_grid.
 
 */
 
 /** \page bench Speed and Accuracy
+
+\section Speed
+
+SHTns does not implement any "fast" algorithm. However, timings with other Spherical Harmonic Transform tools (including a fast algorithm)
+show that <b>SHTns performs much faster than any other</b> (non-parallel). Furthermore, even at large sizes, the fast algorithm we tested does not seem to be willing to take the lead.
+
+<div>
+<table><tr>
+<td>\f$\ell_{max}\f$</td> <td><a href="http://www.ipgp.fr/~wieczor/SHTOOLS/SHTOOLS.html">shtools</a> 2.5 (Gauss)</td>
+  <td><a href="http://sourceforge.net/projects/libpsht/">libpsht</a> (1 thread)</td>
+  <td><a href="http://sourceforge.net/projects/libpsht/">libpsht</a> (8 parallel threads)</td>
+  <td><a href="http://www.cs.dartmouth.edu/~geelong/sphere/">SpharmonicKit2</a> 2.7 (fast)</td>
+  <td><b>SHTns</b> (Gauss)</td> <td>SHTns/SpharmonicKit2</td> </tr><tr>
+<td>127 </td> <td>8.9 ms</td> <td> 5.3 ms</td> <td> 10-80 ms </td> <td>5.5 ms</td>  <td><b>0.69 ms</b></td>  <td>8.0</td> </tr><tr>
+<td>255 </td> <td>73 ms</td> <td> 29 ms</td> <td> 20-90ms </td> <td>27 ms</td>  <td><b>6.5 ms</b></td>  <td>4.2</td> </tr><tr>
+<td>511 </td> <td>757 ms</td> <td>170 ms </td> <td>40-116 ms</td> <td>143 ms</td>  <td><b>49 ms</b></td>  <td>2.9</td> </tr><tr>
+<td>1023 </td> <td>10.3 s</td> <td>1.1 s </td> <td> 130-300 ms</td> <td>860 ms</td>  <td><b>297 ms</b></td>  <td>2.9</td> </tr><tr>
+<td>2047 </td> <td>NA (too slow)</td> <td>5.9 s</td> <td>0.8-0.9 s</td> <td>NA (out of memory)</td>  <td><b>3.6 s</b></td>  <td>NA</td> </tr></table>
+
+<i>Average times for forward or backward scalar transform on an Intel Xeon E5520 (2.27GHz), with gcc 4.1.2 and "-O3 -march=core2" compilation options.</i>
+</div>
 
 \section Accuracy
 
@@ -323,6 +350,7 @@ make time_SHT
 ./time_SHT 600 -iter=1 -nlorder=1 -polaropt=0 -quickinit
 \endcode
 
+SHTns has been tested on x86 architecture with SSE2 double precision floating point math (64 bit) to be <b>accurate up to l=2700</b>.
 
 */
 
@@ -337,7 +365,7 @@ in the preamble of your source file.
 
 First of all you need to initialize SHTns. There are two ways to do this :
 \li calling \ref shtns_init function,
-\li or calling \ref shtns_set_size followed by \ref shtns_precompute. This way lets you choose normalization and optimization.
+\li or calling \ref shtns_create followed by \ref shtns_set_grid. This way lets you choose normalization and optimization.
 
 Note that you can call initialization function(s) only once.
 Then you must allocate some memory (with fftw_malloc so that the memory is properly aligned for vectorized code),
@@ -360,7 +388,7 @@ SHTns provides an interface to Fortran language (compatible with gfortran).
 
 First of all you need to initialize SHTns. There are two ways to do this :
 \li calling one of the shtns_init_* subroutines,
-\li or calling shtns_set_size followed by shtns_precompute. This way lets you choose normalization and optimization.
+\li or calling shtns_create followed by shtns_set_grid. This way lets you choose normalization and optimization.
 
 Note that you can call initialization function(s) only once.
 Then you must allocate some memory, and finaly you can perform some spherical harmonic transforms.

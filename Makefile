@@ -1,79 +1,85 @@
-## "version" identification string
-HGID=`hg id -ti`
 ## path prefix for make install (installs to $(PREFIX)/lib and $(PREFIX)/include)
 PREFIX=$(HOME)
 
+
 ## global options for gcc
 ## there should be -ffast-math or at least -fcx-limited-range to produce fast code.
-go= -O3 -std=gnu99 -ffast-math -D_GNU_SOURCE
+go= -O3 -fomit-frame-pointer -std=gnu99 -ffast-math -D_GNU_SOURCE -funsafe-math-optimizations
 
 ## compiler :
 ## generic gcc
 cmd = gcc $(go)
-## profiling
-#cmd = gcc $(go) -p -fno-inline
-## recent gcc with native support
-#cmd = gcc $(go) -march=native
-## gcc k8 (lgitl3)
-#cmd = gcc $(go) -march=k8
-## gcc core2 (calcul1&2)
-#cmd = gcc $(go) -march=core2 -I$(PREFIX)/include -L$(PREFIX)/lib
-## icare 64bits opteron
-#cmd = cc -fast -xarch=amd64 -I$(PREFIX)/include -L$(PREFIX)/lib
-## r2d2
-#cmd = gcc $(go) -march=core2 -m64 -I$(PREFIX)/include -L$(PREFIX)/lib
+## recent gcc with native support ( gcc >= 4.2 )
+cmd = gcc $(go) -march=native
+## gcc for core2 
+#cmd = gcc $(go) -march=core2 
 
 # intel compiler may be used for codelets
-#shtcc = icc -axT -xT -O3 -prec-div -complex-limited-range -D_HGID_="\"$(HGID)\""
+#shtcc = icc -axT -xT -O3 -prec-div -complex-limited-range
 # gcc + vector intrinsic leads to faster code (with _GCC_VEC_ set to 1 in sht_config.h)
 shtcc = $(cmd)
 
-shtfiles = SHT/SH_to_spat.c SHT/spat_to_SH.c SHT/SHeo_to_spat.c SHT/spat_to_SHeo.c SHT/hyb_SH_to_spat.gen.c SHT/hyb_spat_to_SH.gen.c SHT/sparse_spat_to_SH.gen.c SHT/sparse_SH_to_spat.gen.c SHT/Makefile sht_legendre.c
+## "version" identification string
+HGID=`hg id -ti`
+
+shtfiles = SHT/SH_to_spat_fly.c SHT/fly_spat_to_SH.gen.c SHT/spat_to_SH_fly.c SHT/fly_SH_to_spat.gen.c SHT/SH_to_spat.c SHT/spat_to_SH.c SHT/hyb_SH_to_spat.gen.c SHT/hyb_spat_to_SH.gen.c SHT/Makefile sht_legendre.c
+#SHT/sparse_spat_to_SH.gen.c SHT/sparse_SH_to_spat.gen.c  SHT/SHeo_to_spat.c SHT/spat_to_SHeo.c 
 
 hfiles = sht_private.h sht_config.h shtns.h
 
 default : libshtns.a
 
-libshtns.a : Makefile SHT.o sht_std.o sht_ltr.o sht_m0.o sht_eo.o sht_m0ltr.o
-	ar rcs libshtns.a SHT.o sht_std.o sht_ltr.o sht_m0.o sht_eo.o sht_m0ltr.o
+libshtns.a : Makefile SHT.o sht_std.o sht_ltr.o #sht_m0.o sht_m0ltr.o
+	ar rcs libshtns.a SHT.o sht_std.o sht_ltr.o #sht_m0.o sht_m0ltr.o
 	@echo " "
 	@cat COPYRIGHT
 
 install :
-	cp libshtns.a $(PREFIX)/lib
-	cp shtns.h $(PREFIX)/include
-	cp shtns.f $(PREFIX)/include
+	@mkdir -p $(PREFIX)/lib/
+	@mkdir -p $(PREFIX)/include/
+	cp libshtns.a $(PREFIX)/lib/
+	cp shtns.h $(PREFIX)/include/
+	cp shtns.f $(PREFIX)/include/
 	@echo " "
 	@cat COPYRIGHT
 
 # codelets :
+SHT/SH_to_spat_fly.c : SHT/fly_SH_to_spat.gen.c SHT/Makefile
+	$(MAKE) SH_to_spat_fly.c -C SHT
+SHT/spat_to_SH_fly.c : SHT/fly_spat_to_SH.gen.c SHT/Makefile
+	$(MAKE) spat_to_SH_fly.c -C SHT
 SHT/SH_to_spat.c : SHT/hyb_SH_to_spat.gen.c SHT/Makefile
 	$(MAKE) SH_to_spat.c -C SHT
 SHT/spat_to_SH.c : SHT/hyb_spat_to_SH.gen.c SHT/Makefile
 	$(MAKE) spat_to_SH.c -C SHT
-SHT/SHeo_to_spat.c : SHT/sparse_SH_to_spat.gen.c SHT/Makefile
-	$(MAKE) SHeo_to_spat.c -C SHT
-SHT/spat_to_SHeo.c : SHT/sparse_spat_to_SH.gen.c SHT/Makefile
-	$(MAKE) spat_to_SHeo.c -C SHT
+#SHT/SHeo_to_spat.c : SHT/sparse_SH_to_spat.gen.c SHT/Makefile
+#	$(MAKE) SHeo_to_spat.c -C SHT
+#SHT/spat_to_SHeo.c : SHT/sparse_spat_to_SH.gen.c SHT/Makefile
+#	$(MAKE) spat_to_SHeo.c -C SHT
 
 # objects :
 SHT.o : SHT.c Makefile sht_legendre.c $(hfiles) cycle.h
 	$(cmd) -D_HGID_="\"$(HGID)\"" -c SHT.c -o SHT.o
+	@echo "DONE SHT.o"
 
-sht_std.o : sht_std.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c
+sht_std.o : sht_std.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c SHT/SH_to_spat_fly.c SHT/spat_to_SH_fly.c
 	$(shtcc) -c sht_std.c -o sht_std.o
-sht_ltr.o : sht_ltr.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c
+	@echo "DONE sht_std"
+sht_ltr.o : sht_ltr.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c SHT/SH_to_spat_fly.c SHT/spat_to_SH_fly.c
 	$(shtcc) -c sht_ltr.c -o sht_ltr.o
-sht_m0.o : sht_m0.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c
+	@echo "DONE sht_ltr"
+sht_m0.o : sht_m0.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c SHT/SH_to_spat_fly.c SHT/spat_to_SH_fly.c
 	$(shtcc) -c sht_m0.c -o sht_m0.o
-sht_m0ltr.o : sht_m0ltr.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c
+	@echo "DONE sht_m0"
+sht_m0ltr.o : sht_m0ltr.c Makefile $(hfiles) SHT/sht_generic.c SHT/SH_to_spat.c SHT/spat_to_SH.c SHT/SH_to_spat_fly.c SHT/spat_to_SH_fly.c
 	$(shtcc) -c sht_m0ltr.c -o sht_m0ltr.o
-sht_eo.o : sht_eo.c Makefile $(hfiles) SHT/SHeo_to_spat.c SHT/spat_to_SHeo.c
-	$(shtcc) -c sht_eo.c -o sht_eo.o
+	@echo "DONE sht_m0ltr"
+#sht_eo.o : sht_eo.c Makefile $(hfiles) SHT/SHeo_to_spat.c SHT/spat_to_SHeo.c
+#	$(shtcc) -c sht_eo.c -o sht_eo.o
 
 # programs :
 time_SHT : shtns.h time_SHT.c libshtns.a Makefile
-	$(cmd) time_SHT.c libshtns.a -lfftw3 -lm -o time_SHT
+	$(cmd) time_SHT.c -I$(PREFIX)/include -L$(PREFIX)/lib ./libshtns.a -lfftw3 -lm -o time_SHT
 
 SHT_example : SHT_example.c libshtns.a Makefile shtns.h
 	$(cmd) -I$(PREFIX)/include -L$(PREFIX)/lib SHT_example.c -lshtns -lfftw3 -lm -o SHT_example
@@ -98,7 +104,7 @@ python : shtns.h shtns.i
 	gcc -shared /usr/lib/libfftw3.so SHT.o sht_*.o shtns_wrap.o -o _shtns.so
 
 # update the copyright notice
-updatecpy : copyright
+updatecpy : COPYRIGHT
 	./update-copyright.sh shtns.h
 	./update-copyright.sh SHT.c
 	./update-copyright.sh sht_legendre.c
@@ -112,6 +118,7 @@ updatecpy : copyright
 	./update-copyright.sh SHT/sht_generic.c
 	./update-copyright.sh SHT/hyb_SH_to_spat.gen.c
 	./update-copyright.sh SHT/hyb_spat_to_SH.gen.c
+	./update-copyright.sh SHT/fly_SH_to_spat.gen.c
 	./update-copyright.sh SHT/sparse_SH_to_spat.gen.c
 	./update-copyright.sh SHT/sparse_spat_to_SH.gen.c
 	./update-copyright.sh time_SHT.c
