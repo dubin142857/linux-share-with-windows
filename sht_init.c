@@ -154,11 +154,11 @@ static int fft_int(int n, int fmax)
 // sht algorithms (hyb, fly1, ...)
 enum sht_algos { SHT_MEM, SHT_SV,
 	SHT_FLY1, SHT_FLY2, SHT_FLY3, SHT_FLY4, SHT_FLY6, SHT_FLY8,
-	SHT_GPU, SHT_GPU2,
+	SHT_GPU1, SHT_GPU2, SHT_GPU3, SHT_GPU4,
 	SHT_OMP1, SHT_OMP2, SHT_OMP3, SHT_OMP4, SHT_OMP6, SHT_OMP8,
 	SHT_NALG };
 
-char* sht_name[SHT_NALG] = {"mem", "s+v", "fly1", "fly2", "fly3", "fly4", "fly6", "fly8", "gpu", "gpu2", "omp1", "omp2", "omp3", "omp4", "omp6", "omp8" };
+char* sht_name[SHT_NALG] = {"mem", "s+v", "fly1", "fly2", "fly3", "fly4", "fly6", "fly8", "gpu1", "gpu2", "gpu3", "gpu4", "omp1", "omp2", "omp3", "omp4", "omp6", "omp8" };
 char* sht_type[SHT_NTYP] = {"syn", "ana", "vsy", "van", "gsp", "gto", "v3s", "v3a" };
 char* sht_var[SHT_NVAR] = {"std", "ltr", "m" };
 int sht_npar[SHT_NTYP] = {2, 2, 4, 4, 3, 3, 6, 6};
@@ -176,8 +176,7 @@ extern void* ffly_m0[6][SHT_NTYP];
 extern void* fomp[6][SHT_NTYP];
 #endif
 #ifdef HAVE_LIBCUFFT
-extern void* fgpu[SHT_NTYP];
-extern void* fgpu2[SHT_NTYP];
+extern void* fgpu[4][SHT_NTYP];
 #endif
 
 // big array holding all sht functions, variants and algorithms
@@ -197,7 +196,7 @@ static void set_sht_fly(shtns_cfg shtns, int typ_start)
 /// \internal use gpu alogorithm where possible
 static void set_sht_gpu(shtns_cfg shtns, int typ_start)
 {
-	int algo = SHT_GPU;
+	int algo = SHT_GPU1;
 	for (int it=typ_start; it<SHT_NTYP; it++) {
 		for (int v=0; v<SHT_NVAR; v++)
 			if (sht_func[v][algo][it] != NULL)
@@ -271,10 +270,10 @@ static void init_sht_array_func(shtns_cfg shtns)
 		memcpy(sht_func[SHT_LTR][SHT_MEM], &fmem_l, sizeof(void*)*SHT_NTYP);
 	  #endif
 	  #ifdef HAVE_LIBCUFFT
-		memcpy(sht_func[SHT_STD][SHT_GPU], &fgpu, sizeof(void*)*SHT_NTYP);
-		memcpy(sht_func[SHT_LTR][SHT_GPU], &fgpu, sizeof(void*)*SHT_NTYP);
-		memcpy(sht_func[SHT_STD][SHT_GPU2], &fgpu2, sizeof(void*)*SHT_NTYP);
-		memcpy(sht_func[SHT_LTR][SHT_GPU2], &fgpu2, sizeof(void*)*SHT_NTYP);
+		for (int j=0; j<4; j++) {
+			memcpy(sht_func[SHT_STD][SHT_GPU1+j], &fgpu[j], sizeof(void*)*SHT_NTYP);
+			memcpy(sht_func[SHT_LTR][SHT_GPU1+j], &fgpu[j], sizeof(void*)*SHT_NTYP);
+		}
 	  #endif
 	}
 
@@ -514,6 +513,7 @@ static void planFFT(shtns_cfg shtns, int layout, int on_the_fly)
 		return;
 	}
 
+	shtns->layout = layout;		// store the data-layout for future reference (by CUDA init).
 	/* NPHI > 1 */
 	theta_inc=1;  phi_inc=NLAT;  phi_embed=2*(NPHI/2+1);	// SHT_NATIVE_LAYOUT is the default.
 	if (layout & SHT_THETA_CONTIGUOUS) {	theta_inc=1;  phi_inc=NLAT;  phi_embed=NPHI;	}
@@ -556,16 +556,29 @@ static void planFFT(shtns_cfg shtns, int layout, int on_the_fly)
 	
 		#if SHT_VERBOSE > 1
 		if (verbose>1) {
-			printf("          fftw cost ifftc=%lg,  fftc=%lg  ",fftw_cost(shtns->ifftc), fftw_cost(shtns->fftc));	fflush(stdout);
+			printf("          [phi-contiguous] fftw cost ifftc=%lg,  fftc=%lg  ",fftw_cost(shtns->ifftc), fftw_cost(shtns->fftc));	fflush(stdout);
 		}
 		#endif
+	#ifdef HAVE_LIBCUFFT
+	} else if (!(layout & SHT_THETA_CONTIGUOUS)) {		// use the fastest layout compatible with cuFFT
+		shtns->fftc_mode = 2;	// out-of-place
+		// Fourier -> spatial
+		shtns->ifftc = fftw_plan_many_dft(1, &nfft, NLAT/2, ShF, &nfft, NLAT/2, 1, (cplx*) Sh, &nfft, 1, nfft, FFTW_BACKWARD, shtns->fftw_plan_mode);		
+		// spatial -> Fourier
+		shtns->fftc = fftw_plan_many_dft(1, &nfft, NLAT/2, (cplx*) Sh, &nfft, 1, nfft, ShF, &nfft, NLAT/2, 1, FFTW_BACKWARD, shtns->fftw_plan_mode);
+		#if SHT_VERBOSE > 1
+		if (verbose>1) {
+			printf("          [native cuFFT] fftw cost ifftc=%lg,  fftc=%lg  ",fftw_cost(shtns->ifftc), fftw_cost(shtns->fftc));	fflush(stdout);
+		}
+		#endif
+	#endif
 	} else {	//if (layout & SHT_THETA_CONTIGUOUS) {		// use only in-place here, supposed to be faster.
 		shtns->fftc_mode = 0;
 		shtns->ifftc = fftw_plan_many_dft(1, &nfft, NLAT/2, ShF, &nfft, NLAT/2, 1, ShF, &nfft, NLAT/2, 1, FFTW_BACKWARD, shtns->fftw_plan_mode);
 		shtns->fftc = shtns->ifftc;		// same thing, with m>0 and m<0 exchanged.
 		#if SHT_VERBOSE > 1
 		if (verbose>1) {
-			printf("          fftw cost ifftc=%lg  ",fftw_cost(shtns->ifftc));	fflush(stdout);
+			printf("          [theta-contiguous] fftw cost ifftc=%lg  ",fftw_cost(shtns->ifftc));	fflush(stdout);
 		}
 		#endif
 	}
@@ -1777,10 +1790,10 @@ int shtns_set_grid_auto(shtns_cfg shtns, enum shtns_type flags, double eps, int 
 		#endif
 	}
 	if (gpu_ok < 0) {		// disable the GPU functions
-		memset(sht_func[SHT_STD][SHT_GPU], 0, sizeof(void*)*SHT_NTYP);
-		memset(sht_func[SHT_LTR][SHT_GPU], 0, sizeof(void*)*SHT_NTYP);
-		memset(sht_func[SHT_STD][SHT_GPU2], 0, sizeof(void*)*SHT_NTYP);
-		memset(sht_func[SHT_LTR][SHT_GPU2], 0, sizeof(void*)*SHT_NTYP);
+		for (int j=SHT_GPU1; j<=SHT_GPU4; j++) {
+			memset(sht_func[SHT_STD][j], 0, sizeof(void*)*SHT_NTYP);
+			memset(sht_func[SHT_LTR][j], 0, sizeof(void*)*SHT_NTYP);
+		}
 	}
   #endif
 
