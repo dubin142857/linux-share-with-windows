@@ -166,12 +166,15 @@ struct shtns_info {		// MUST start with "int nlm;"
 
 	#ifdef HAVE_LIBCUFFT
 	/* cuda stuff */
-	int cu_flags;
+	short cu_flags;
+	short cu_fft_mode;
 	double* d_alm;
 	double* d_ct;
 	double* d_mx_stdt;
 	double* d_mx_van;
 	double* gpu_mem;
+	double* xfft;
+	double* xfft_cpu;
 	size_t nlm_stride, spat_stride;
 	cudaStream_t xfer_stream, comp_stream;		// the cuda streams
 	cufftHandle cufft_plan;						// the cufft Handle
@@ -182,6 +185,7 @@ struct shtns_info {		// MUST start with "int nlm;"
 	unsigned char grid;		// store grid type.
 	short norm;				// store the normalization of the Spherical Harmonics (enum \ref shtns_norm + \ref SHT_NO_CS_PHASE flag)
 	unsigned fftw_plan_mode;
+	unsigned layout;		// requested data layout
 	double Y00_1, Y10_ct, Y11_st;
 	shtns_cfg next;		// pointer to next sht_setup or NULL (records a chained list of SHT setup).
 	// the end should be aligned on the size of int, to allow the storage of small arrays.
